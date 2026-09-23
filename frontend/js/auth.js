@@ -15,11 +15,11 @@ const Auth = (() => {
       <form id="login-form">
         <div class="field">
           <label>${I18n.t('username')}</label>
-          <input type="text" name="username" required autofocus />
+          <input type="text" name="username" required autofocus autocapitalize="off" autocorrect="off" spellcheck="false" />
         </div>
         <div class="field">
           <label>${I18n.t('password')}</label>
-          <input type="password" name="password" required />
+          <input type="password" name="password" required autocapitalize="off" autocorrect="off" spellcheck="false" />
         </div>
         <button type="submit" class="btn btn-primary w-full" id="login-submit">${I18n.t('loginButton')}</button>
       </form>
