@@ -150,7 +150,9 @@ def init_db() -> None:
         _ensure_column(conn, "evidence", "category", "TEXT NOT NULL DEFAULT 'OTHER'")
 
         cur = conn.execute("SELECT COUNT(*) AS c FROM users")
-        if cur.fetchone()["c"] == 0:
+        count = cur.fetchone()["c"]
+        print(f"[ATHAR] init_db: found {count} existing user(s) in the database")
+        if count == 0:
             from datetime import datetime, timezone
 
             now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
@@ -164,3 +166,4 @@ def init_db() -> None:
                 ),
             )
             conn.commit()
+            print(f"[ATHAR] Created default admin user: '{config.DEFAULT_ADMIN_USERNAME}'")

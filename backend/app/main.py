@@ -19,6 +19,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
 @app.on_event("startup")
 def _startup():
+    print(f"[ATHAR] Storage directory: {config.STORAGE_DIR}")
     init_db()
     if config.JWT_SECRET_IS_EPHEMERAL:
         print(
