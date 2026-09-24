@@ -480,7 +480,9 @@ def analyze_case_correlations(items: list[dict], lang: str = "en") -> dict:
     items: list of {id, filename, sha256, uploaded_at, capture_time,
     device} plus an optional content_excerpt (actual extracted text, for
     text files and PDFs -- see extract_text_excerpt) or visual_description
-    (images). capture_time is the real EXIF capture timestamp when
+    (images), and -- for some images -- authenticity_check (a prior
+    REAL/FAKE/UNSURE verdict from the authenticity-check feature, if one
+    was run). capture_time is the real EXIF capture timestamp when
     available and is what the prompt is told to treat as the meaningful
     timing signal; uploaded_at is explicitly NOT (see the prompt).
     Returns {"status": "DISABLED"} with no key configured -- callers must
@@ -532,6 +534,17 @@ def analyze_case_correlations(items: list[dict], lang: str = "en") -> dict:
         "automatically insignificant) -- reason about whether the "
         "pattern is actually noteworthy for an investigator, given the "
         "full context of every item together. "
+        "AUTHENTICITY RULE, IMPORTANT: some image items include an "
+        "authenticity_check field -- a prior rough, low-confidence AI "
+        "verdict (label REAL/FAKE/UNSURE + a short reason) on whether "
+        "that specific image may be AI-generated or manipulated. If you "
+        "report ANY edge where item_a or item_b has authenticity_check "
+        "label FAKE or UNSURE, you MUST say so explicitly inside that "
+        "edge's explanation (e.g. \"note: this image was flagged as "
+        "possibly fake\") -- never present a link involving a "
+        "flagged item as an equal-confidence match without that caveat, "
+        "since treating unverified content as reliably connected to "
+        "genuine evidence would be misleading. "
         "Do not report a relationship for every possible pair -- only "
         "ones with real investigative significance. Do not speculate "
         "beyond the given data, and do not invent identical-hash or "
@@ -658,31 +671,43 @@ def generate_case_summary(case_name: str, items: list[dict], lang: str = "en") -
     )
 
     prompt = (
-        "You are drafting a formal case-file summary for a digital "
+        "You are drafting a SHORT, formal case-file summary for a digital "
         "forensics investigator. You are given every evidence item in "
         f'the case "{case_name}": filename, category, upload timestamp, '
-        "detected device (from EXIF) if any, and -- where available -- "
+        "detected device (from EXIF) if any, -- where available -- "
         "content_excerpt (actual extracted text from a document) or "
-        "visual_description (what is actually visible in a photo). "
-        "Write a structured summary with these sections, using clear "
-        "section headings: (1) a brief case overview describing what "
-        "evidence exists and what categories it falls into; (2) facts "
-        "extracted from the evidence, with EVERY fact attributed to the "
-        "filename it came from; (3) a chronological timeline of the "
-        "evidence by timestamp, if that ordering is meaningful; (4) "
-        "notes on any gaps, inconsistencies, or missing information. "
-        "FORMATTING: plain text only, rendered exactly as written with "
-        "no formatting engine -- do NOT use Markdown or any other markup "
-        "(no **bold**, no # headings, no _italics_, no backticks). Write "
-        "each section heading as a plain line of text followed by a "
-        "colon, then its content on the following lines; use a plain "
-        "dash \"-\" or a number and period (\"1.\") for list items, "
-        "nothing fancier. STRICT RULES: only state what is directly "
-        "supported by the given evidence -- never speculate, never "
-        "invent names, dates, or facts not present, and NEVER assert "
-        "guilt, innocence, or any legal conclusion; this is a factual "
-        "summary of evidence, not a verdict, and it is a DRAFT for a "
-        "human investigator to review, not a finished document. "
+        "visual_description (what is actually visible in a photo), and "
+        "-- for some images -- authenticity_check: a prior rough, "
+        "low-confidence AI verdict (label REAL/FAKE/UNSURE + a short "
+        "reason) on whether that specific image may be AI-generated or "
+        "manipulated. "
+        "AUTHENTICITY RULE, IMPORTANT: if any item has an "
+        "authenticity_check with label FAKE or UNSURE, you MUST mention "
+        "it explicitly in the facts section, by filename, framed as a "
+        "flag needing verification (e.g. \"X was flagged by an automated, "
+        "low-confidence check as possibly fake/manipulated and should be "
+        "verified before relying on it\") -- never omit this, and never "
+        "state or imply that a FAKE/UNSURE-flagged item is confirmed "
+        "genuine evidence. "
+        "Write exactly 4 short sections, using a plain line of text "
+        "followed by a colon as each heading, nothing fancier: (1) case "
+        "overview -- 1-2 sentences on what evidence exists; (2) facts -- "
+        "each fact in ONE line, attributed to its filename, including "
+        "any authenticity flags per the rule above; (3) timeline -- only "
+        "if capture_time (not uploaded_at) makes an order meaningful, "
+        "otherwise write \"لا يوجد جدول زمني موثوق\" / \"No reliable "
+        "timeline\" and skip it; (4) gaps/notes -- ONLY things not "
+        "already stated in section 2, as a short list, not a restatement. "
+        "LENGTH LIMIT: the entire summary must be under 120 words total "
+        "-- be terse, this is a working draft, not a report. Do not "
+        "repeat the same fact in more than one section. "
+        "FORMATTING: plain text only, no Markdown (no **bold**, no # "
+        "headings, no backticks). STRICT RULES: only state what is "
+        "directly supported by the given evidence -- never speculate, "
+        "never invent names, dates, or facts not present, and NEVER "
+        "assert guilt, innocence, or any legal conclusion; this is a "
+        "factual summary of evidence, not a verdict, and it is a DRAFT "
+        "for a human investigator to review, not a finished document. "
         + lang_instruction + "\n\n"
         f"EVIDENCE ITEMS:\n{json.dumps(items, ensure_ascii=False)}"
     )
@@ -691,7 +716,7 @@ def generate_case_summary(case_name: str, items: list[dict], lang: str = "en") -
         {
             "model": AI_MODEL,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 2000,
+            "max_tokens": 600,
         }
     ).encode("utf-8")
 

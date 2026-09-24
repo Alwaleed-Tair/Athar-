@@ -47,6 +47,24 @@ def build_evidence_ai_items(conn, case_id: int) -> list[dict]:
         (case_id,),
     ).fetchall()
 
+    auth_rows = conn.execute(
+        "SELECT evidence_id, result_json FROM evidence_authenticity WHERE evidence_id IN "
+        "(SELECT id FROM evidence WHERE case_id = ?)",
+        (case_id,),
+    ).fetchall()
+    auth_by_evidence_id = {}
+    for a in auth_rows:
+        try:
+            result = json.loads(a["result_json"])
+            assessment = result.get("ai_assessment")
+            if assessment and assessment.get("label"):
+                auth_by_evidence_id[a["evidence_id"]] = {
+                    "label": assessment["label"],
+                    "explanation": assessment.get("explanation", ""),
+                }
+        except Exception:
+            pass
+
     items = []
     for r in rows:
         try:
@@ -65,6 +83,15 @@ def build_evidence_ai_items(conn, case_id: int) -> list[dict]:
             "device": device,
             "category": r["category"],
         }
+        if r["id"] in auth_by_evidence_id:
+            # A rough, low-confidence AI authenticity verdict (REAL /
+            # FAKE / UNSURE) from a prior "authenticity check" run on
+            # this item, if the investigator ran one. Included so the
+            # summary and map can factor it in and flag it -- not to be
+            # treated as proven, but it must not be silently ignored
+            # either when it's the only thing suggesting an item may not
+            # be genuine.
+            item["authenticity_check"] = auth_by_evidence_id[r["id"]]
 
         ext = Path(r["filename"]).suffix
         file_path = config.EVIDENCE_DIR / r["stored_name"]
