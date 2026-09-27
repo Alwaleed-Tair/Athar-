@@ -50,7 +50,7 @@ const Notifications = (() => {
 
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm';
-    btn.textContent = '🔔';
+    btn.innerHTML = UI.icon('bell', '', 16);
     btn.title = I18n.t('notifications');
     btn.onclick = openModal;
     wrap.appendChild(btn);

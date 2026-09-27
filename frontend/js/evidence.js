@@ -36,14 +36,20 @@ const Evidence = (() => {
     const uploadCard = document.createElement('div');
     uploadCard.className = 'card';
     uploadCard.innerHTML = `
-      <h3>${I18n.t('uploadEvidence')}</h3>
+      <h3 style="display:flex; align-items:center; gap:8px;">
+        ${UI.icon('file', '', 20)}
+        <span>${I18n.t('uploadEvidence')}</span>
+      </h3>
       <div id="upload-error"></div>
       <div class="field">
         <label>${I18n.t('category')}</label>
         <select id="upload-category">${categoryOptionsHtml('OTHER')}</select>
       </div>
       <div class="dropzone" id="dropzone">
-        <div id="dropzone-text">${I18n.t('dropHint')}</div>
+        <div style="color:var(--color-primary); margin-bottom:8px; display:flex; justify-content:center;">
+          ${UI.icon('folder', '', 36)}
+        </div>
+        <div id="dropzone-text" style="font-weight:500;">${I18n.t('dropHint')}</div>
         <input type="file" id="file-input" style="display:none" />
       </div>
     `;
@@ -290,7 +296,7 @@ const Evidence = (() => {
       ? `<div class="text-muted text-xs mt-1">${I18n.t('lastAnalyzedAt')}: ${UI.escapeHtml(analyzedAt)}</div>`
       : '';
     return `
-      <div class="ai-tag">⚠ ${I18n.t('aiAutomatedEstimate')}</div>
+      <div class="ai-tag">${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('aiAutomatedEstimate')}</span></div>
       <p><strong>${I18n.t('aiSummary')}:</strong> ${UI.escapeHtml(res.summary || '')}</p>
       <p><strong>${I18n.t('aiCorrelations')}:</strong></p>
       ${corrHtml}
@@ -340,7 +346,7 @@ const Evidence = (() => {
       : '';
 
     return `
-      <div class="ai-tag">⚠ ${I18n.t('authCheckCaveat')}</div>
+      <div class="ai-tag">${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('authCheckCaveat')}</span></div>
       <h5 class="mt-2 text-sm">${I18n.t('authExifTitle')}</h5>
       ${exifHtml}
       <h5 class="mt-2 text-sm">${I18n.t('authAiTitle')}</h5>

@@ -59,11 +59,20 @@ const Api = (() => {
   return {
     getToken, setToken, ApiError,
     login: (username, password) => request('POST', '/api/auth/login', { body: { username, password } }),
+    register: (username, password) => request('POST', '/api/auth/register', { body: { username, password } }),
+    forgotPassword: (email) => request('POST', '/api/auth/forgot-password', { body: { email } }),
     me: () => request('GET', '/api/auth/me'),
     createUser: (payload) => request('POST', '/api/users', { body: payload }),
     listUsers: () => request('GET', '/api/users'),
 
-    listCases: (search) => request('GET', `/api/cases${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+    listCases: (search = '', status = '', priority = '') => {
+      const params = new URLSearchParams();
+      if (search) params.append('search', search);
+      if (status && status !== 'ALL') params.append('status', status);
+      if (priority && priority !== 'ALL') params.append('priority', priority);
+      const q = params.toString();
+      return request('GET', `/api/cases${q ? `?${q}` : ''}`);
+    },
     createCase: (payload) => request('POST', '/api/cases', { body: payload }),
     getCase: (id) => request('GET', `/api/cases/${id}`),
     addMember: (caseId, userId) => request('POST', `/api/cases/${caseId}/members`, { body: { user_id: userId } }),

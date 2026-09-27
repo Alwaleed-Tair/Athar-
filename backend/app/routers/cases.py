@@ -14,16 +14,21 @@ router = APIRouter(prefix="/api", tags=["cases"])
 class CreateCaseRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
+    case_identifier: str = ""
+    priority: str = "MEDIUM"
+    classification: str = "RESTRICTED"
+    status: str = "OPEN"
 
 
 @router.post("/cases", status_code=status.HTTP_201_CREATED)
 def create_case(body: CreateCaseRequest, user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
+    status_val = body.status if body.status in ("OPEN", "PENDING", "CLOSED") else "OPEN"
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO cases (name, description, status, created_by, created_at) "
-            "VALUES (?, ?, 'OPEN', ?, ?)",
-            (body.name, body.description, user["id"], now),
+            "INSERT INTO cases (name, description, status, case_identifier, priority, classification, created_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (body.name, body.description, status_val, body.case_identifier, body.priority, body.classification, user["id"], now),
         )
         case_id = cur.lastrowid
         conn.execute(
@@ -36,30 +41,53 @@ def create_case(body: CreateCaseRequest, user: dict = Depends(get_current_user))
         "CASE_CREATED",
         actor_id=user["id"],
         case_id=case_id,
-        params={"username": user["username"], "case_name": body.name},
+        params={"username": user["username"], "case_name": body.name, "case_identifier": body.case_identifier},
     )
-    return {"id": case_id, "name": body.name, "description": body.description, "status": "OPEN"}
+    return {
+        "id": case_id,
+        "name": body.name,
+        "description": body.description,
+        "status": status_val,
+        "case_identifier": body.case_identifier,
+        "priority": body.priority,
+        "classification": body.classification,
+    }
 
 
 @router.get("/cases")
-def list_cases(user: dict = Depends(get_current_user), search: str = Query(default="")):
+def list_cases(
+    user: dict = Depends(get_current_user),
+    search: str = Query(default=""),
+    status: str = Query(default=""),
+    priority: str = Query(default=""),
+):
+    query = (
+        "SELECT c.*, "
+        "(SELECT COUNT(*) FROM evidence e WHERE e.case_id = c.id) AS evidence_count, "
+        "(SELECT u.username FROM users u WHERE u.id = c.created_by) AS creator_username "
+        "FROM cases c "
+        "JOIN case_members m ON m.case_id = c.id "
+        "WHERE m.user_id = ? AND c.status != 'DELETED' "
+    )
+    params = [user["id"]]
+
+    if search:
+        query += " AND (c.name LIKE ? OR c.case_identifier LIKE ? OR c.description LIKE ?) "
+        like_search = f"%{search}%"
+        params.extend([like_search, like_search, like_search])
+
+    if status and status != "ALL":
+        query += " AND c.status = ? "
+        params.append(status)
+
+    if priority and priority != "ALL":
+        query += " AND c.priority = ? "
+        params.append(priority)
+
+    query += " ORDER BY c.created_at DESC"
+
     with get_conn() as conn:
-        if search:
-            rows = conn.execute(
-                "SELECT c.* FROM cases c "
-                "JOIN case_members m ON m.case_id = c.id "
-                "WHERE m.user_id = ? AND c.status != 'DELETED' AND c.name LIKE ? "
-                "ORDER BY c.created_at DESC",
-                (user["id"], f"%{search}%"),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT c.* FROM cases c "
-                "JOIN case_members m ON m.case_id = c.id "
-                "WHERE m.user_id = ? AND c.status != 'DELETED' "
-                "ORDER BY c.created_at DESC",
-                (user["id"],),
-            ).fetchall()
+        rows = conn.execute(query, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 

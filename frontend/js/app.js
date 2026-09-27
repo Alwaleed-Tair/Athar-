@@ -8,6 +8,12 @@ function applyThemeAndDir() {
   document.documentElement.setAttribute('data-theme', theme);
   document.documentElement.setAttribute('lang', lang);
   document.documentElement.setAttribute('dir', I18n.dirFor(lang));
+
+  // Dynamically update favicon based on active theme
+  const fav = document.querySelector('link[rel="icon"]');
+  if (fav) {
+    fav.href = theme === 'dark' ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+  }
 }
 
 function toggleTheme() {
@@ -22,6 +28,12 @@ function toggleLang() {
   State.set({}); // trigger re-render from in-memory state, no reload
 }
 
+function setSpecificLang(targetLang) {
+  if (I18n.getLang() === targetLang) return;
+  I18n.setLang(targetLang);
+  State.set({});
+}
+
 function logout() {
   Api.setToken(null);
   State.set({ user: null, route: { name: 'login' } });
@@ -29,49 +41,88 @@ function logout() {
 
 function renderTopbar() {
   const { user, theme } = State.get();
+  const isDark = theme === 'dark';
+  const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+
   const bar = document.createElement('div');
   bar.className = 'topbar';
 
+  // Brand container with logo and digital forensics label
   const brand = document.createElement('div');
   brand.className = 'brand';
-  brand.innerHTML = `<img src="/assets/logo.png" alt="${I18n.t('appName')}" class="brand-logo" />`;
+  brand.innerHTML = `
+    <div class="brand-icon-box">
+      <img src="${symbolSrc}" alt="ATHAR" class="brand-symbol-img" />
+    </div>
+    <div class="brand-title">
+      <span class="brand-name">${I18n.t('appName')}</span>
+      <span class="brand-sub">${I18n.t('appTagline')}</span>
+    </div>
+  `;
   brand.style.cursor = user ? 'pointer' : 'default';
   if (user) brand.onclick = () => State.set({ route: { name: 'cases' } });
 
+  // Center / dev mode banner
+  const centerInfo = document.createElement('div');
+  centerInfo.className = 'flex items-center gap-2';
+  centerInfo.innerHTML = `
+    <span class="dev-mode-pill">
+      ${UI.icon('cpu', '', 14)}
+      <span>${I18n.t('devModeBanner')}</span>
+    </span>
+  `;
+
+  // Controls container
   const controls = document.createElement('div');
   controls.className = 'controls';
 
-  const langBtn = document.createElement('button');
-  langBtn.className = 'btn btn-sm';
-  langBtn.textContent = I18n.getLang() === 'ar' ? 'EN' : 'AR';
-  langBtn.title = I18n.t('language');
-  langBtn.onclick = toggleLang;
+  // Dedicated Language switch pill [ EN | عربي ]
+  const currentLang = I18n.getLang();
+  const langPill = document.createElement('div');
+  langPill.className = 'lang-toggle-pill';
+  langPill.innerHTML = `
+    <button type="button" class="lang-toggle-btn ${currentLang === 'en' ? 'active' : ''}" id="top-lang-en">English</button>
+    <button type="button" class="lang-toggle-btn ${currentLang === 'ar' ? 'active' : ''}" id="top-lang-ar">عربي</button>
+  `;
+  langPill.querySelector('#top-lang-en').onclick = () => setSpecificLang('en');
+  langPill.querySelector('#top-lang-ar').onclick = () => setSpecificLang('ar');
 
+  // Theme switch (SVG icon, no emojis)
   const themeBtn = document.createElement('button');
-  themeBtn.className = 'btn btn-sm';
-  themeBtn.textContent = theme === 'dark' ? '☀︎' : '☾';
+  themeBtn.type = 'button';
+  themeBtn.className = 'theme-toggle-btn';
+  themeBtn.innerHTML = theme === 'dark' ? UI.icon('sun', '', 18) : UI.icon('moon', '', 18);
   themeBtn.title = I18n.t('theme');
   themeBtn.onclick = toggleTheme;
 
-  controls.appendChild(langBtn);
+  controls.appendChild(langPill);
   controls.appendChild(themeBtn);
 
   if (user) {
-    const who = document.createElement('span');
-    who.className = 'text-muted text-sm';
-    who.textContent = `${user.username} · ${user.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator')}`;
+    // Examiner profile card
+    const examinerCard = document.createElement('div');
+    examinerCard.className = 'examiner-profile-pill';
+    examinerCard.innerHTML = `
+      <span class="examiner-avatar">${UI.icon('userCheck', '', 14)}</span>
+      <span>${I18n.t('examinerName')}</span>
+    `;
 
     controls.appendChild(Notifications.renderBell());
-    controls.appendChild(who);
+    controls.appendChild(examinerCard);
 
+    // Logout button with icon
     const logoutBtn = document.createElement('button');
-    logoutBtn.className = 'btn btn-sm';
-    logoutBtn.textContent = I18n.t('logout');
+    logoutBtn.className = 'btn btn-sm btn-ghost';
+    logoutBtn.innerHTML = `
+      ${UI.icon('arrowRight', '', 15)}
+      <span>${I18n.t('logout')}</span>
+    `;
     logoutBtn.onclick = logout;
     controls.appendChild(logoutBtn);
   }
 
   bar.appendChild(brand);
+  bar.appendChild(centerInfo);
   bar.appendChild(controls);
   return bar;
 }

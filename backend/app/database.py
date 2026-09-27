@@ -148,6 +148,9 @@ def init_db() -> None:
         # Migrations for columns added after the initial release -- safe
         # to run on every startup; a no-op once the column already exists.
         _ensure_column(conn, "evidence", "category", "TEXT NOT NULL DEFAULT 'OTHER'")
+        _ensure_column(conn, "cases", "case_identifier", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "cases", "priority", "TEXT NOT NULL DEFAULT 'MEDIUM'")
+        _ensure_column(conn, "cases", "classification", "TEXT NOT NULL DEFAULT 'RESTRICTED'")
 
         cur = conn.execute("SELECT COUNT(*) AS c FROM users")
         count = cur.fetchone()["c"]

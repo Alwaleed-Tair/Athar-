@@ -4,9 +4,15 @@ const Chain = (() => {
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
-      <div class="flex" style="justify-content:space-between;align-items:center">
-        <h3>${I18n.t('fullChain')}</h3>
-        <button class="btn btn-sm" id="chain-verify-btn">${I18n.t('verifyChain')}</button>
+      <div class="flex" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="color:var(--color-primary); display:flex;">${UI.icon('shieldCheck', '', 22)}</span>
+          <h3 style="margin:0;">${I18n.t('fullChain')}</h3>
+        </div>
+        <button class="btn btn-primary btn-sm" id="chain-verify-btn">
+          ${UI.icon('shieldCheck', '', 15)}
+          <span>${I18n.t('verifyChain')}</span>
+        </button>
       </div>
       <div id="chain-verify-status" class="mt-3"></div>
       <div id="chain-list" class="mt-4"></div>
@@ -25,7 +31,7 @@ const Chain = (() => {
       try {
         rows = await Api.caseAudit(caseId);
       } catch (e) {
-        listEl.innerHTML = `<div class="alert alert-danger">${I18n.t('genericError')}</div>`;
+        listEl.innerHTML = `<div class="alert alert-danger">${UI.icon('alertTriangle', '', 16)} <span>${I18n.t('genericError')}</span></div>`;
         return;
       }
       if (rows.length === 0) {
@@ -36,11 +42,18 @@ const Chain = (() => {
       list.className = 'chain-list';
       rows.forEach((r) => {
         const item = document.createElement('div');
-        item.className = 'chain-item' + (brokenSeq && r.seq >= brokenSeq ? ' broken' : '');
+        const isBroken = brokenSeq && r.seq >= brokenSeq;
+        item.className = 'chain-item' + (isBroken ? ' broken' : '');
         item.innerHTML = `
-          <div class="text-sm">${UI.escapeHtml(r.message)}</div>
-          <div class="text-muted text-xs">${UI.escapeHtml(r.ts)} · #${r.seq}</div>
-          <div class="chain-hash text-xs mono mt-1">${I18n.t('sha256')}: ${r.event_hash.slice(0, 24)}…</div>
+          <div style="font-weight:600; font-size:0.9rem; color:var(--color-text);">${UI.escapeHtml(r.message)}</div>
+          <div class="text-muted text-xs mt-1" style="display:flex; align-items:center; gap:6px;">
+            <span>${UI.escapeHtml(r.ts)}</span>
+            <span>·</span>
+            <span class="ui-badge" style="padding:1px 6px;">#${r.seq}</span>
+          </div>
+          <div class="chain-hash text-xs mono mt-1">
+            <span style="opacity:0.75;">${I18n.t('sha256')}:</span> ${r.event_hash}
+          </div>
         `;
         list.appendChild(item);
       });
@@ -50,17 +63,17 @@ const Chain = (() => {
 
     verifyBtn.onclick = async () => {
       verifyBtn.disabled = true;
-      verifyBtn.textContent = I18n.t('verifying');
+      verifyBtn.innerHTML = `<span>${I18n.t('verifying')}</span>`;
       try {
         const result = await Api.verifyCaseChain(caseId);
         brokenSeq = result.first_broken_seq;
         Cases.renderVerifyResult(statusEl, result);
         await load();
       } catch (e) {
-        statusEl.innerHTML = `<div class="alert alert-danger">${I18n.t('genericError')}</div>`;
+        statusEl.innerHTML = `<div class="alert alert-danger">${UI.icon('alertTriangle', '', 16)} <span>${I18n.t('genericError')}</span></div>`;
       }
       verifyBtn.disabled = false;
-      verifyBtn.textContent = I18n.t('verifyChain');
+      verifyBtn.innerHTML = `${UI.icon('shieldCheck', '', 15)} <span>${I18n.t('verifyChain')}</span>`;
     };
 
     await load();

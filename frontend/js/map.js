@@ -46,7 +46,10 @@ const EvidenceMap = (() => {
       const caption = document.createElement('p');
       caption.className = 'text-muted text-xs';
       caption.style.marginBlockEnd = '12px';
-      caption.textContent = `⚠ ${I18n.t('aiAutomatedEstimate')}`;
+      caption.style.display = 'flex';
+      caption.style.alignItems = 'center';
+      caption.style.gap = '6px';
+      caption.innerHTML = `${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('aiAutomatedEstimate')}</span>`;
       container.appendChild(caption);
     }
 
@@ -253,12 +256,11 @@ const EvidenceMap = (() => {
       circle.setAttribute('stroke-width', '2');
       g.appendChild(circle);
 
-      const icon = document.createElementNS(SVG_NS, 'text');
-      icon.setAttribute('x', p.x);
-      icon.setAttribute('y', p.y + 5);
-      icon.setAttribute('text-anchor', 'middle');
-      icon.setAttribute('font-size', '16');
-      icon.textContent = '📄';
+      const icon = document.createElementNS(SVG_NS, 'path');
+      icon.setAttribute('d', `M ${p.x - 7} ${p.y - 10} h 9 l 5 5 v 13 h -14 z`);
+      icon.setAttribute('fill', 'rgba(0, 180, 255, 0.15)');
+      icon.setAttribute('stroke', '#00b4d8');
+      icon.setAttribute('stroke-width', '1.8');
       g.appendChild(icon);
 
       const title = document.createElementNS(SVG_NS, 'title');
