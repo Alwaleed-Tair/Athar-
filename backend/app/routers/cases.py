@@ -64,7 +64,8 @@ def list_cases(
     query = (
         "SELECT c.*, "
         "(SELECT COUNT(*) FROM evidence e WHERE e.case_id = c.id) AS evidence_count, "
-        "(SELECT u.username FROM users u WHERE u.id = c.created_by) AS creator_username "
+        "(SELECT u.username FROM users u WHERE u.id = c.created_by) AS creator_username, "
+        "(SELECT u.full_name FROM users u WHERE u.id = c.created_by) AS creator_full_name "
         "FROM cases c "
         "JOIN case_members m ON m.case_id = c.id "
         "WHERE m.user_id = ? AND c.status != 'DELETED' "
@@ -175,8 +176,8 @@ def add_member(case_id: int, body: AddMemberRequest, admin: dict = Depends(requi
 def list_members(case_id: int, user: dict = Depends(require_case_member)):
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT u.id, u.username, u.role FROM users u "
-            "JOIN case_members m ON m.user_id = u.id WHERE m.case_id = ?",
+            "SELECT u.id, u.username, u.full_name, u.role, m.added_at FROM users u "
+            "JOIN case_members m ON m.user_id = u.id WHERE m.case_id = ? ORDER BY m.added_at",
             (case_id,),
         ).fetchall()
     return [dict(r) for r in rows]

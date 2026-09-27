@@ -30,7 +30,11 @@ const Api = (() => {
       body: isForm ? body : body ? JSON.stringify(body) : undefined,
     });
 
-    if (res.status === 401) {
+    // A 401 on an authenticated request means the session expired, so
+    // drop it and go back to sign-in. A 401 from sign-in itself (wrong
+    // password) must NOT do that -- it would redraw the login screen and
+    // wipe the "invalid credentials" message before the user sees it.
+    if (res.status === 401 && token && !path.startsWith('/api/auth/')) {
       setToken(null);
       State.set({ user: null, token: null, route: { name: 'login' } });
       throw new ApiError('Session expired. Please log in again.', 401);
@@ -59,11 +63,14 @@ const Api = (() => {
   return {
     getToken, setToken, ApiError,
     login: (username, password) => request('POST', '/api/auth/login', { body: { username, password } }),
-    register: (username, password) => request('POST', '/api/auth/register', { body: { username, password } }),
-    forgotPassword: (email) => request('POST', '/api/auth/forgot-password', { body: { email } }),
+    register: (fullName, username, password) =>
+      request('POST', '/api/auth/register', { body: { full_name: fullName, username, password } }),
     me: () => request('GET', '/api/auth/me'),
     createUser: (payload) => request('POST', '/api/users', { body: payload }),
     listUsers: () => request('GET', '/api/users'),
+    userDirectory: () => request('GET', '/api/users/directory'),
+    resetUserPassword: (userId, newPassword) =>
+      request('POST', `/api/users/${userId}/password`, { body: { new_password: newPassword } }),
 
     listCases: (search = '', status = '', priority = '') => {
       const params = new URLSearchParams();

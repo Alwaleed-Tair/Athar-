@@ -68,6 +68,7 @@ DEFAULT_EVIDENCE_CATEGORY = "OTHER"
 # Default bootstrap admin (only used if the users table is empty on startup)
 DEFAULT_ADMIN_USERNAME = os.environ.get("ATHAR_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("ATHAR_ADMIN_PASSWORD", "ChangeMe123!")
+DEFAULT_ADMIN_FULL_NAME = os.environ.get("ATHAR_ADMIN_FULL_NAME", "System Administrator")
 
 # Fixed timestamp format: UTC, no tzinfo, single consistent format used
 # EVERYWHERE a timestamp is stored or hashed.

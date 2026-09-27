@@ -25,6 +25,14 @@ TEMPLATES = {
         "en": "Admin {actor_username} created user {new_username} ({role})",
         "ar": "أنشأ المسؤول {actor_username} المستخدم {new_username} ({role})",
     },
+    "USER_REGISTERED": {
+        "en": "{full_name} ({username}) created an investigator account",
+        "ar": "أنشأ {full_name} ({username}) حساب محقق",
+    },
+    "PASSWORD_RESET": {
+        "en": "Admin {actor_username} reset the password for {target_username}",
+        "ar": "أعاد المسؤول {actor_username} تعيين كلمة مرور {target_username}",
+    },
     "CASE_CREATED": {
         "en": "{username} created case \"{case_name}\"",
         "ar": "أنشأ {username} القضية \"{case_name}\"",

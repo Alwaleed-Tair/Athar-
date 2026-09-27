@@ -1,0 +1,190 @@
+// Admin-only user management: list accounts, create one, reset a
+// password. (Resetting from here replaces an e-mailed "forgot password"
+// link, which would need an outgoing mail server.)
+const Users = (() => {
+  async function renderPage() {
+    const wrap = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'case-list-header';
+    header.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="color:var(--color-primary); display:flex; align-items:center;">${UI.icon('user', '', 26)}</span>
+        <h1 style="margin:0;">${I18n.t('usersTitle')}</h1>
+      </div>
+      <button type="button" class="btn btn-primary btn-neon" id="btn-new-user">
+        ${UI.icon('plus', '', 18)} <span>${I18n.t('newUser')}</span>
+      </button>
+    `;
+    wrap.appendChild(header);
+
+    const listCard = document.createElement('div');
+    listCard.className = 'card';
+    wrap.appendChild(listCard);
+
+    async function load() {
+      listCard.innerHTML = `<p class="text-muted">…</p>`;
+      let users;
+      try {
+        users = await Api.listUsers();
+      } catch (e) {
+        listCard.innerHTML = `<div class="alert alert-danger">${I18n.t('genericError')}</div>`;
+        return;
+      }
+      const me = State.get().user;
+      const rows = users
+        .map(
+          (u) => `
+          <tr>
+            <td><strong>${UI.escapeHtml(u.full_name || '—')}</strong>${
+              u.id === me.id ? ` <span class="text-muted text-sm">(${I18n.t('you')})</span>` : ''
+            }</td>
+            <td class="mono" style="font-size:0.82rem;">${UI.escapeHtml(u.username)}</td>
+            <td><span class="ui-badge ${u.role === 'ADMIN' ? 'badge-high' : 'badge-active'}">${
+              u.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator')
+            }</span></td>
+            <td class="text-muted text-sm">${UI.escapeHtml((u.created_at || '').slice(0, 10))}</td>
+            <td style="text-align:end;">
+              <button type="button" class="btn btn-sm btn-ghost" data-reset="${u.id}" data-name="${UI.escapeHtml(u.full_name || u.username)}">
+                ${UI.icon('key', '', 14)} <span>${I18n.t('resetPassword')}</span>
+              </button>
+            </td>
+          </tr>`
+        )
+        .join('');
+      listCard.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>${I18n.t('fullName')}</th>
+              <th>${I18n.t('usernameOrEmail')}</th>
+              <th>${I18n.t('role')}</th>
+              <th>${I18n.t('createdAt')}</th>
+              <th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+      listCard.querySelectorAll('[data-reset]').forEach((btn) => {
+        btn.onclick = () => openResetPasswordModal(Number(btn.dataset.reset), btn.dataset.name);
+      });
+    }
+
+    header.querySelector('#btn-new-user').onclick = () => openCreateUserModal(load);
+    await load();
+    return wrap;
+  }
+
+  function openCreateUserModal(onCreated) {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="modal-header">
+        <h3 style="margin:0; display:flex; align-items:center; gap:8px;">${UI.icon('userCheck', '', 20)} <span>${I18n.t('newUser')}</span></h3>
+      </div>
+      <div id="cu-error"></div>
+      <form id="cu-form" novalidate>
+        <div class="field">
+          <label for="cu-name">${I18n.t('fullName')}</label>
+          <input id="cu-name" name="full_name" type="text" maxlength="120" placeholder="${I18n.t('fullNamePlaceholder')}" required />
+        </div>
+        <div class="field">
+          <label for="cu-username">${I18n.t('usernameOrEmail')}</label>
+          <input id="cu-username" name="username" type="text" autocapitalize="off" spellcheck="false" required />
+        </div>
+        <div class="field">
+          <label for="cu-role">${I18n.t('role')}</label>
+          <select id="cu-role" name="role">
+            <option value="INVESTIGATOR" selected>${I18n.t('investigator')}</option>
+            <option value="ADMIN">${I18n.t('admin')}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cu-password">${I18n.t('password')}</label>
+          <input id="cu-password" name="password" type="password" autocomplete="new-password" required />
+          ${Auth.passwordChecklistHtml()}
+        </div>
+        <div class="flex gap-2" style="justify-content:flex-end; margin-top:20px;">
+          <button type="button" id="cu-cancel" class="btn">${I18n.t('cancel')}</button>
+          <button type="submit" id="cu-submit" class="btn btn-primary btn-neon">${UI.icon('plus', '', 16)} <span>${I18n.t('create')}</span></button>
+        </div>
+      </form>
+    `;
+    const { close } = UI.openModal(content);
+    content.querySelector('#cu-cancel').onclick = close;
+    Auth.wirePasswordChecklist(content, content.querySelector('#cu-password'));
+
+    const errBox = content.querySelector('#cu-error');
+    content.querySelector('#cu-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const fullName = String(fd.get('full_name') || '').trim();
+      const username = String(fd.get('username') || '').trim();
+      const password = String(fd.get('password') || '');
+      const role = String(fd.get('role') || 'INVESTIGATOR');
+      const fail = (msg) => (errBox.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(msg)}</div>`);
+
+      if (fullName.length < 2) return fail(I18n.t('fullNameRequired'));
+      if (username.length < 3) return fail(I18n.t('usernameTooShort'));
+      if (!Auth.isStrongPassword(password)) return fail(I18n.t('passwordTooWeak'));
+
+      const btn = content.querySelector('#cu-submit');
+      btn.disabled = true;
+      try {
+        await Api.createUser({ full_name: fullName, username, password, role });
+        close();
+        onCreated && onCreated();
+      } catch (err) {
+        btn.disabled = false;
+        fail(Auth.friendlyError(err));
+      }
+    });
+  }
+
+  function openResetPasswordModal(userId, displayName) {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="modal-header">
+        <h3 style="margin:0; display:flex; align-items:center; gap:8px;">${UI.icon('key', '', 20)} <span>${I18n.t('resetPassword')}</span></h3>
+      </div>
+      <p class="text-muted">${I18n.t('resetPasswordFor', { name: UI.escapeHtml(displayName) })}</p>
+      <div id="rp-error"></div>
+      <form id="rp-form" novalidate>
+        <div class="field">
+          <label for="rp-password">${I18n.t('newPassword')}</label>
+          <input id="rp-password" name="password" type="password" autocomplete="new-password" required />
+          ${Auth.passwordChecklistHtml()}
+        </div>
+        <div class="flex gap-2" style="justify-content:flex-end; margin-top:20px;">
+          <button type="button" id="rp-cancel" class="btn">${I18n.t('cancel')}</button>
+          <button type="submit" id="rp-submit" class="btn btn-primary">${I18n.t('save')}</button>
+        </div>
+      </form>
+    `;
+    const { close } = UI.openModal(content);
+    content.querySelector('#rp-cancel').onclick = close;
+    const input = content.querySelector('#rp-password');
+    Auth.wirePasswordChecklist(content, input);
+
+    const errBox = content.querySelector('#rp-error');
+    content.querySelector('#rp-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!Auth.isStrongPassword(input.value)) {
+        errBox.innerHTML = `<div class="alert alert-danger">${I18n.t('passwordTooWeak')}</div>`;
+        return;
+      }
+      const btn = content.querySelector('#rp-submit');
+      btn.disabled = true;
+      try {
+        await Api.resetUserPassword(userId, input.value);
+        errBox.innerHTML = `<div class="alert alert-success">${UI.icon('check', '', 16)} <span>${I18n.t('passwordResetDone')}</span></div>`;
+        setTimeout(close, 1400);
+      } catch (err) {
+        btn.disabled = false;
+        errBox.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(Auth.friendlyError(err))}</div>`;
+      }
+    });
+  }
+
+  return { renderPage };
+})();

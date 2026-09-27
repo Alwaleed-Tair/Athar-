@@ -22,12 +22,17 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> dic
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, role FROM users WHERE id = ?", (int(payload["sub"]),)
+            "SELECT id, username, full_name, role FROM users WHERE id = ?", (int(payload["sub"]),)
         ).fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
 
-    return {"id": row["id"], "username": row["username"], "role": row["role"]}
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "full_name": row["full_name"] or "",
+        "role": row["role"],
+    }
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:

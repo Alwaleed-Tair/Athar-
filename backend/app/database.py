@@ -151,6 +151,15 @@ def init_db() -> None:
         _ensure_column(conn, "cases", "case_identifier", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "cases", "priority", "TEXT NOT NULL DEFAULT 'MEDIUM'")
         _ensure_column(conn, "cases", "classification", "TEXT NOT NULL DEFAULT 'RESTRICTED'")
+        _ensure_column(conn, "users", "full_name", "TEXT NOT NULL DEFAULT ''")
+        # Databases created before full_name existed: give the bootstrap
+        # admin its display name (other users keep showing their username
+        # until an admin recreates them with a name).
+        conn.execute(
+            "UPDATE users SET full_name = ? WHERE username = ? AND full_name = ''",
+            (config.DEFAULT_ADMIN_FULL_NAME, config.DEFAULT_ADMIN_USERNAME),
+        )
+        conn.commit()
 
         cur = conn.execute("SELECT COUNT(*) AS c FROM users")
         count = cur.fetchone()["c"]
@@ -160,10 +169,11 @@ def init_db() -> None:
 
             now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
             conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) "
-                "VALUES (?, ?, 'ADMIN', ?)",
+                "INSERT INTO users (username, full_name, password_hash, role, created_at) "
+                "VALUES (?, ?, ?, 'ADMIN', ?)",
                 (
                     config.DEFAULT_ADMIN_USERNAME,
+                    config.DEFAULT_ADMIN_FULL_NAME,
                     security.hash_password(config.DEFAULT_ADMIN_PASSWORD),
                     now,
                 ),

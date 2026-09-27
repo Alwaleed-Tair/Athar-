@@ -35,6 +35,7 @@ function setSpecificLang(targetLang) {
 }
 
 function logout() {
+  Notifications.stop();
   Api.setToken(null);
   State.set({ user: null, route: { name: 'login' } });
 }
@@ -61,16 +62,6 @@ function renderTopbar() {
   `;
   brand.style.cursor = user ? 'pointer' : 'default';
   if (user) brand.onclick = () => State.set({ route: { name: 'cases' } });
-
-  // Center / dev mode banner
-  const centerInfo = document.createElement('div');
-  centerInfo.className = 'flex items-center gap-2';
-  centerInfo.innerHTML = `
-    <span class="dev-mode-pill">
-      ${UI.icon('cpu', '', 14)}
-      <span>${I18n.t('devModeBanner')}</span>
-    </span>
-  `;
 
   // Controls container
   const controls = document.createElement('div');
@@ -99,15 +90,28 @@ function renderTopbar() {
   controls.appendChild(themeBtn);
 
   if (user) {
-    // Examiner profile card
+    // Signed-in user: real name (falls back to username) + role
+    const displayName = user.full_name || user.username;
+    const roleLabel = user.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator');
     const examinerCard = document.createElement('div');
     examinerCard.className = 'examiner-profile-pill';
+    examinerCard.title = user.username;
     examinerCard.innerHTML = `
       <span class="examiner-avatar">${UI.icon('userCheck', '', 14)}</span>
-      <span>${I18n.t('examinerName')}</span>
+      <span class="examiner-name">${UI.escapeHtml(displayName)} · <span class="text-muted">${roleLabel}</span></span>
     `;
 
     controls.appendChild(Notifications.renderBell());
+
+    if (user.role === 'ADMIN') {
+      const usersBtn = document.createElement('button');
+      usersBtn.type = 'button';
+      usersBtn.className = 'btn btn-sm btn-ghost' + (State.get().route.name === 'users' ? ' active' : '');
+      usersBtn.innerHTML = `${UI.icon('user', '', 15)} <span>${I18n.t('usersNav')}</span>`;
+      usersBtn.onclick = () => State.set({ route: { name: 'users' } });
+      controls.appendChild(usersBtn);
+    }
+
     controls.appendChild(examinerCard);
 
     // Logout button with icon
@@ -122,7 +126,6 @@ function renderTopbar() {
   }
 
   bar.appendChild(brand);
-  bar.appendChild(centerInfo);
   bar.appendChild(controls);
   return bar;
 }
@@ -149,6 +152,8 @@ async function render() {
     container.appendChild(await Cases.renderList());
   } else if (route.name === 'case') {
     container.appendChild(await Cases.renderDetail(route.caseId, route.tab || 'overview'));
+  } else if (route.name === 'users' && user.role === 'ADMIN') {
+    container.appendChild(await Users.renderPage());
   } else {
     container.appendChild(await Cases.renderList());
   }

@@ -24,7 +24,7 @@ athar/
 │       ├── i18n.py               # AR/EN templates, audit messages built at read time
 │       ├── analysis.py           # EXIF extraction (Pillow) + external AI call
 │       └── routers/
-│           ├── auth.py           # login, admin-only user creation
+│           ├── auth.py           # login, registration, admin user management
 │           ├── cases.py          # cases, membership, audit view, verify
 │           └── evidence.py       # upload (streamed+hashed), inspect, download, analyze
 └── frontend/
@@ -39,7 +39,10 @@ athar/
         ├── auth.js                # login screen
         ├── cases.js               # case list + case workspace (3 tabs)
         ├── evidence.js            # evidence table, upload, inspect modal
+        ├── map.js                  # evidence relationship map
         ├── chain.js                # full chain-of-custody tab
+        ├── users.js                # admin: users list, create user, reset password
+        ├── notifications.js        # cross-case alerts: bell, popup, background check
         └── app.js                  # topbar, routing, full re-render on state change
 ```
 
@@ -62,17 +65,29 @@ Then open **http://localhost:8000** — the same port serves both the API
 
 ### First account
 
-On first run (empty database), an ADMIN account is created automatically:
+On first run (empty database), an ADMIN account is created automatically
+from `ATHAR_ADMIN_USERNAME` / `ATHAR_ADMIN_PASSWORD` (defaults: `admin` /
+`ChangeMe123!`). You can also sign in as `admin@athar.gov`.
 
-- **Username:** `admin`
-- **Password:** `ChangeMe123!`
+### Accounts
 
-Override these before first run via `ATHAR_ADMIN_USERNAME` /
-`ATHAR_ADMIN_PASSWORD` in your `.env`, or just log in and create other
-accounts, then stop using this one. There is no self-registration screen
-by design — only an ADMIN can create new users (`POST /api/users`), and
-that endpoint sets the role explicitly; no public/unauthenticated
-endpoint accepts a `role` field.
+- **Create account** on the sign-in screen makes an INVESTIGATOR account
+  right away (full name, email ending in @gmail.com / @outlook.sa /
+  @hotmail.com / @athar.gov, and a password with upper/lower case, a
+  number and a special character — the same rules are enforced by the
+  server). It can never create an ADMIN.
+- A new investigator sees no cases until they create one or an admin
+  adds them to one from the case's **Case members** panel.
+- Admins get a **Users** screen: list accounts, create users (either
+  role), and reset a user's password. There is no e-mailed reset link —
+  "Forgot password" tells the user to contact an admin.
+
+### Cross-case alerts
+
+When evidence in one case matches another case (same file hash, same
+device, or a text reference), a popup appears the first time the match
+is seen, and the bell keeps the full list. The app re-checks in the
+background every minute while a user is signed in.
 
 ### Enabling AI analysis (optional)
 

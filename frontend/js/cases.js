@@ -155,7 +155,7 @@ const Cases = (() => {
             </span>
             <span style="display:flex; align-items:center; gap:5px;">
               ${UI.icon('user', '', 13)}
-              <span>${UI.escapeHtml(c.creator_username || 'Sarah Vance')}</span>
+              <span>${UI.escapeHtml(c.creator_full_name || c.creator_username || '')}</span>
             </span>
           </div>
         `;
@@ -429,6 +429,7 @@ const Cases = (() => {
       if (alertsEl) body.appendChild(alertsEl);
       body.appendChild(await renderCaseSummary(caseId));
       body.appendChild(await renderOverview(caseId, caseData));
+      body.appendChild(await renderMembers(caseId));
     } else if (tab === 'evidence') {
       body.appendChild(await Evidence.renderTab(caseId));
     } else if (tab === 'map') {
@@ -624,6 +625,96 @@ const Cases = (() => {
     verifyBtn.onclick = runVerify;
     await runVerify();
 
+    return el;
+  }
+
+  // Who can see this case. Membership is what gates every case-scoped
+  // endpoint (and which cross-case alerts show full detail), so admins
+  // need a way to grant it without using the API by hand.
+  async function renderMembers(caseId) {
+    const el = document.createElement('div');
+    el.className = 'card mt-4';
+    const isAdmin = State.get().user && State.get().user.role === 'ADMIN';
+
+    async function load() {
+      el.innerHTML = `<h3 style="display:flex; align-items:center; gap:8px; margin-top:0;">${UI.icon('user', '', 18)} <span>${I18n.t('caseMembers')}</span></h3><p class="text-muted">…</p>`;
+      let members;
+      try {
+        members = await Api.listMembers(caseId);
+      } catch (e) {
+        el.innerHTML += `<div class="alert alert-danger">${I18n.t('genericError')}</div>`;
+        return;
+      }
+
+      const chips = members
+        .map(
+          (m) => `
+          <span class="examiner-profile-pill" title="${UI.escapeHtml(m.username)}">
+            <span class="examiner-avatar">${UI.icon('user', '', 12)}</span>
+            <span>${UI.escapeHtml(m.full_name || m.username)} · <span class="text-muted">${
+              m.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator')
+            }</span></span>
+          </span>`
+        )
+        .join('');
+
+      el.innerHTML = `
+        <h3 style="display:flex; align-items:center; gap:8px; margin-top:0;">${UI.icon('user', '', 18)} <span>${I18n.t('caseMembers')}</span></h3>
+        <p class="text-muted text-sm">${I18n.t('caseMembersHint')}</p>
+        <div class="flex gap-2" style="flex-wrap:wrap;">${chips}</div>
+        <div id="members-admin"></div>
+      `;
+
+      if (!isAdmin) return;
+
+      let directory = [];
+      try {
+        directory = await Api.userDirectory();
+      } catch (e) {
+        return;
+      }
+      const memberIds = new Set(members.map((m) => m.id));
+      const candidates = directory.filter((u) => !memberIds.has(u.id));
+      const adminBox = el.querySelector('#members-admin');
+
+      if (candidates.length === 0) {
+        adminBox.innerHTML = `<p class="text-muted text-sm mt-3">${I18n.t('allUsersAreMembers')}</p>`;
+        return;
+      }
+
+      adminBox.innerHTML = `
+        <div id="members-error" class="mt-3"></div>
+        <div class="flex gap-2 mt-3" style="flex-wrap:wrap; align-items:center;">
+          <select id="member-select" style="flex:1; min-width:220px;">
+            ${candidates
+              .map(
+                (u) =>
+                  `<option value="${u.id}">${UI.escapeHtml(u.full_name || u.username)} (${UI.escapeHtml(u.username)})</option>`
+              )
+              .join('')}
+          </select>
+          <button type="button" class="btn btn-primary" id="member-add-btn">
+            ${UI.icon('plus', '', 16)} <span>${I18n.t('addMember')}</span>
+          </button>
+        </div>
+      `;
+      const addBtn = adminBox.querySelector('#member-add-btn');
+      addBtn.onclick = async () => {
+        const userId = Number(adminBox.querySelector('#member-select').value);
+        addBtn.disabled = true;
+        try {
+          await Api.addMember(caseId, userId);
+          Notifications.refresh();
+          await load();
+        } catch (err) {
+          addBtn.disabled = false;
+          adminBox.querySelector('#members-error').innerHTML =
+            `<div class="alert alert-danger">${UI.escapeHtml(err.message)}</div>`;
+        }
+      };
+    }
+
+    await load();
     return el;
   }
 
