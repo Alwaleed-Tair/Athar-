@@ -156,6 +156,14 @@ def search_all(conn, user_id: int, query: str, case_id: int | None = None, limit
         if q in textindex.normalize(r["description"] or ""):
             where.append("DESCRIPTION")
             snip = snip or textindex.snippet(r["description"], q)
+        try:
+            exif = json.loads(r["exif_json"] or "{}")
+        except ValueError:
+            exif = {}
+        device = f"{exif.get('Make') or ''} {exif.get('Model') or ''}".strip()
+        if device and q in textindex.normalize(device):
+            where.append("DEVICE")
+            snip = snip or device
         text = textindex.ensure_text(conn, r) if r["purged_at"] is None else ""
         if text and q in textindex.normalize(text):
             where.append("CONTENT")

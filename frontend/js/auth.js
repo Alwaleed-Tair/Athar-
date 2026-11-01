@@ -54,12 +54,13 @@ const Auth = (() => {
   // language; anything unrecognised is shown as-is.
   function friendlyError(err) {
     if (!err) return I18n.t('genericError');
+    if (err.code) return UI.errorMessage(err);
     if (err.status === 401) return I18n.t('invalidCredentials');
     const msg = String(err.message || '');
     if (/already exists/i.test(msg)) return I18n.t('emailTaken');
     if (/^Password must/i.test(msg)) return I18n.t('passwordTooWeak');
     if (/^Email must/i.test(msg)) return I18n.t('emailNotAllowed');
-    return msg || I18n.t('genericError');
+    return UI.errorMessage(err);
   }
 
   async function renderLogin() {
@@ -189,6 +190,7 @@ const Auth = (() => {
               autocorrect="off"
               spellcheck="false"
             />
+            <button type="button" class="pw-toggle" id="pw-toggle" aria-label="${I18n.t('showPassword')}">${UI.icon('eye', '', 16)}</button>
           </div>
           ${isRegister ? passwordChecklistHtml() : `
           <div class="forgot-pwd-row">
@@ -228,6 +230,12 @@ const Auth = (() => {
 
     const pwdInput = card.querySelector('#investigator-password');
     if (isRegister) wirePasswordChecklist(card, pwdInput);
+    const pwToggle = card.querySelector('#pw-toggle');
+    pwToggle.onclick = () => {
+      const show = pwdInput.type === 'password';
+      pwdInput.type = show ? 'text' : 'password';
+      pwToggle.innerHTML = UI.icon(show ? 'eyeOff' : 'eye', '', 16);
+    };
 
     const fpTrigger = card.querySelector('#forgot-pwd-trigger');
     if (fpTrigger) fpTrigger.onclick = openForgotPasswordModal;
@@ -264,22 +272,152 @@ const Auth = (() => {
       }
 
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span>${I18n.t('loggingIn')}</span>`;
+      submitBtn.innerHTML = `<span class="spinner"></span> <span>${isRegister ? I18n.t('registering') : I18n.t('loggingIn')}</span>`;
 
       try {
-        const res = isRegister
-          ? await Api.register(fullName, username, password)
-          : await Api.login(username, password);
-        authMode = 'login';
+        if (isRegister) {
+          const res = await Api.register(fullName, username, password);
+          authMode = 'login';
+          renderCheckEmail(container, res.email, res.email_delivery);
+          return;
+        }
+        const res = await Api.login(username, password);
         Api.setToken(res.token);
         State.set({ user: res.user, route: { name: 'cases' } });
         Notifications.refresh();
       } catch (err) {
+        if (err.code === 'EMAIL_NOT_VERIFIED') {
+          renderCheckEmail(container, username, null, { fromLogin: true });
+          return;
+        }
         showError(friendlyError(err));
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<span>${submitLabel}</span>`;
       }
     });
+  }
+
+  // "Check your e-mail" screen shown after registering, or when a correct
+  // password is used on an account that is not verified yet. It never claims
+  // an e-mail was sent unless the server says so.
+  function renderCheckEmail(container, email, delivery, { fromLogin = false } = {}) {
+    container.innerHTML = '';
+    const isDark = State.get().theme === 'dark';
+    const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    const card = document.createElement('div');
+    card.className = 'card login-card';
+    const canEmail = delivery === 'SENT' || delivery === 'CONSOLE';
+    let statusHtml;
+    if (fromLogin) {
+      statusHtml = `<div class="alert alert-warning">${UI.icon('mail', '', 18)} <span>${I18n.t('verifyNeededBody', { email: `<bdi dir="ltr">${UI.escapeHtml(email)}</bdi>` })}</span></div>`;
+    } else if (canEmail) {
+      statusHtml = `<div class="alert alert-success">${UI.icon('mail', '', 18)} <span>${I18n.t('verifySentBody', { email: `<bdi dir="ltr">${UI.escapeHtml(email)}</bdi>`, hours: 24 })}</span></div>
+        ${delivery === 'CONSOLE' ? `<div class="alert alert-warning mt-2">${I18n.t('verifyConsoleNote')}</div>` : ''}`;
+    } else {
+      statusHtml = `<div class="alert alert-warning">${UI.icon('alertTriangle', '', 18)} <span>${I18n.t('verifyNotSentBody', { email: `<bdi dir="ltr">${UI.escapeHtml(email)}</bdi>` })}</span></div>`;
+    }
+    card.innerHTML = `
+      <div class="login-cyber-logo"><img src="${symbolSrc}" alt="ATHAR" class="athar-logo-img" /></div>
+      <div class="login-brand-name">${fromLogin ? I18n.t('verifyNeededTitle') : I18n.t('verifySentTitle')}</div>
+      <div class="mt-3">${statusHtml}</div>
+      <p class="text-muted text-sm mt-3">${I18n.t('verifyCheckSpam')}</p>
+      <div id="resend-msg" aria-live="polite"></div>
+      <div class="flex gap-2 mt-3" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" id="resend-btn">${UI.icon('refresh', '', 15)} <span>${I18n.t('verifyResend')}</span></button>
+        <button type="button" class="btn btn-ghost" id="back-login">${UI.icon('arrowLeft', '', 15)} <span>${I18n.t('backToLogin')}</span></button>
+      </div>`;
+    container.appendChild(card);
+
+    const msg = card.querySelector('#resend-msg');
+    const btn = card.querySelector('#resend-btn');
+    card.querySelector('#back-login').onclick = () => { authMode = 'login'; renderCredentialsCard(container); };
+
+    function cooldown(seconds) {
+      btn.disabled = true;
+      const label = btn.querySelector('span:last-child');
+      let left = seconds;
+      const tick = () => {
+        if (left <= 0) { btn.disabled = false; label.textContent = I18n.t('verifyResend'); return; }
+        label.textContent = I18n.t('verifyResendIn', { seconds: left });
+        left -= 1;
+        setTimeout(tick, 1000);
+      };
+      tick();
+    }
+    if (!fromLogin) cooldown(60);
+
+    btn.onclick = async () => {
+      btn.disabled = true;
+      msg.innerHTML = '';
+      try {
+        const res = await Api.resendVerification(email);
+        const ok = res.email_delivery === 'SENT' || res.email_delivery === 'CONSOLE';
+        msg.innerHTML = ok
+          ? `<div class="alert alert-success mt-2">${UI.icon('check', '', 16)} <span>${I18n.t('verifyResent')}</span></div>`
+          : `<div class="alert alert-warning mt-2">${UI.icon('alertTriangle', '', 16)} <span>${I18n.t('verifyNotSentShort')}</span></div>`;
+        cooldown(60);
+      } catch (err) {
+        msg.innerHTML = `<div class="alert alert-danger mt-2">${UI.icon('alertTriangle', '', 16)} <span>${UI.escapeHtml(UI.errorMessage(err))}</span></div>`;
+        cooldown(err.retryAfter || 60);
+      }
+    };
+  }
+
+  // Landing page for the link in the verification e-mail (?verify=TOKEN).
+  async function renderVerifyPage(token) {
+    const wrap = document.createElement('div');
+    wrap.className = 'login-wrap';
+    const isDark = State.get().theme === 'dark';
+    const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    const card = document.createElement('div');
+    card.className = 'card login-card';
+    card.innerHTML = `
+      <div class="login-cyber-logo"><img src="${symbolSrc}" alt="ATHAR" class="athar-logo-img" /></div>
+      <div class="login-brand-name">${I18n.t('verifyPageTitle')}</div>
+      <div id="verify-body" class="mt-3">${UI.spinner(I18n.t('verifyChecking'))}</div>`;
+    wrap.appendChild(card);
+    const body = card.querySelector('#verify-body');
+
+    const goLogin = () => { authMode = 'login'; State.set({ route: { name: 'login' } }); };
+    try {
+      const res = await Api.verifyEmail(token);
+      body.innerHTML = `
+        <div class="alert alert-success">${UI.icon('shieldCheck', '', 18)} <span>${res.status === 'ALREADY_VERIFIED' ? I18n.t('verifyAlready') : I18n.t('verifySuccess')}</span></div>
+        <div class="mt-3"><button type="button" class="btn btn-primary btn-neon w-full" id="v-login">${I18n.t('signInTab')}</button></div>`;
+      body.querySelector('#v-login').onclick = goLogin;
+    } catch (err) {
+      const expired = err.code === 'TOKEN_EXPIRED';
+      body.innerHTML = `
+        <div class="alert alert-danger">${UI.icon('alertTriangle', '', 18)} <span>${expired ? I18n.t('err_TOKEN_EXPIRED') : I18n.t('err_TOKEN_INVALID')}</span></div>
+        <p class="text-muted text-sm mt-3">${I18n.t('verifyRequestNew')}</p>
+        <div id="v-msg"></div>
+        <form id="v-form" class="mt-2" novalidate>
+          <div class="field"><label for="v-email">${I18n.t('investigatorEmail')}</label>
+            <input id="v-email" type="email" dir="ltr" autocomplete="email" autocapitalize="off" /></div>
+          <button type="submit" class="btn btn-primary w-full" id="v-send">${UI.icon('mail', '', 15)} <span>${I18n.t('verifyResend')}</span></button>
+        </form>
+        <div class="mt-3" style="text-align:center;"><button type="button" class="btn btn-ghost btn-sm" id="v-login">${I18n.t('backToLogin')}</button></div>`;
+      body.querySelector('#v-login').onclick = goLogin;
+      body.querySelector('#v-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = body.querySelector('#v-email').value.trim();
+        const m = body.querySelector('#v-msg');
+        if (!email) { m.innerHTML = `<div class="alert alert-danger">${I18n.t('fillAllFields')}</div>`; return; }
+        const send = body.querySelector('#v-send');
+        send.disabled = true;
+        try {
+          const r = await Api.resendVerification(email);
+          const ok = r.email_delivery === 'SENT' || r.email_delivery === 'CONSOLE';
+          m.innerHTML = ok
+            ? `<div class="alert alert-success">${UI.icon('check', '', 16)} <span>${I18n.t('verifyResent')}</span></div>`
+            : `<div class="alert alert-warning">${UI.icon('alertTriangle', '', 16)} <span>${I18n.t('verifyNotSentShort')}</span></div>`;
+        } catch (e2) {
+          m.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(e2))}</div>`;
+        }
+        setTimeout(() => { send.disabled = false; }, 4000);
+      });
+    }
+    return wrap;
   }
 
   // There is no outgoing mail server, so rather than pretend to send a
@@ -303,5 +441,5 @@ const Auth = (() => {
     content.querySelector('#fp-close').onclick = close;
   }
 
-  return { renderLogin, passwordChecklistHtml, wirePasswordChecklist, isStrongPassword, friendlyError };
+  return { renderLogin, renderVerifyPage, passwordChecklistHtml, wirePasswordChecklist, isStrongPassword, friendlyError };
 })();

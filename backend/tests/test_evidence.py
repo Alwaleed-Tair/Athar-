@@ -342,3 +342,15 @@ def test_similarity_reasons_and_search_scope(client, make_user):
     # Arabic-insensitive matching (alef/ya/ta-marbuta variants)
     upload(client, a["headers"], c1, "ar.txt", "تقرير عن المحافظة والمدينة الشرقية".encode())
     assert client.get("/api/search", headers=a["headers"], params={"q": "المدينه"}).json()["evidence"]
+
+
+def test_search_finds_exif_device(client, make_user):
+    from PIL import Image
+    a = make_user("Alice A")
+    cid = new_case(client, a["headers"])
+    buf = io.BytesIO()
+    ex = Image.Exif(); ex[271] = "Apple"; ex[272] = "iPhone 14"
+    Image.new("RGB", (8, 8)).save(buf, "JPEG", exif=ex)
+    upload(client, a["headers"], cid, "p.jpg", buf.getvalue())
+    r = client.get("/api/search", headers=a["headers"], params={"q": "iphone", "case_id": cid}).json()
+    assert r["evidence"] and "DEVICE" in r["evidence"][0]["matched_in"]

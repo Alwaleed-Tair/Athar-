@@ -214,7 +214,7 @@ const Cases = (() => {
       } catch (err) {
         btn.disabled = false;
         content.querySelector('#dc-error').innerHTML =
-          `<div class="alert alert-danger">${UI.escapeHtml(err.message)}</div>`;
+          `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(err))}</div>`;
       }
     };
   }
@@ -263,7 +263,7 @@ const Cases = (() => {
             type="text" 
             id="cc-name"
             name="name" 
-            placeholder="TEST-CASE-001" 
+            placeholder="${I18n.t('caseTitlePlaceholder')}" 
             required 
           />
           <div class="field-hint-box">
@@ -308,7 +308,7 @@ const Cases = (() => {
         <!-- Field 6: Brief Description -->
         <div class="field">
           <label for="cc-desc">${I18n.t('initialDescription')}</label>
-          <textarea id="cc-desc" name="description" rows="3" placeholder="Brief initial description..."></textarea>
+          <textarea id="cc-desc" name="description" rows="3" placeholder="${I18n.t('caseDescPlaceholder')}"></textarea>
         </div>
 
         <div class="flex gap-2" style="justify-content:flex-end; margin-top:20px;">
@@ -352,7 +352,7 @@ const Cases = (() => {
       } catch (err) {
         submitBtn.disabled = false;
         errBox.innerHTML =
-          `<div class="alert alert-danger">${UI.escapeHtml(err.message)}</div>`;
+          `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(err))}</div>`;
       }
     });
   }
@@ -395,13 +395,37 @@ const Cases = (() => {
       </div>
     `;
 
-    if (State.get().user && State.get().user.role === 'ADMIN') {
+    const actions = document.createElement('div');
+    actions.className = 'flex gap-2';
+    actions.style.flexWrap = 'wrap';
+
+    const reportBtn = document.createElement('button');
+    reportBtn.className = 'btn btn-primary btn-sm';
+    reportBtn.innerHTML = `${UI.icon('fileText', '', 14)} <span>${I18n.t('reportExport')}</span>`;
+    reportBtn.title = I18n.t('reportHint');
+    reportBtn.onclick = async () => {
+      reportBtn.disabled = true;
+      reportBtn.innerHTML = `<span class="spinner"></span> <span>${I18n.t('reportGenerating')}</span>`;
+      try {
+        await Api.downloadReport(caseId);
+        UI.toast(I18n.t('reportReady'));
+      } catch (err) {
+        UI.toast(UI.errorMessage(err), 'error');
+      }
+      reportBtn.disabled = false;
+      reportBtn.innerHTML = `${UI.icon('fileText', '', 14)} <span>${I18n.t('reportExport')}</span>`;
+    };
+    actions.appendChild(reportBtn);
+
+    const me = State.get().user;
+    if (me && (caseData.is_owner || me.role === 'ADMIN')) {
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'btn btn-danger btn-sm';
       deleteBtn.innerHTML = `${UI.icon('trash', '', 14)} <span>${I18n.t('deleteCase')}</span>`;
       deleteBtn.onclick = () => openDeleteCaseModal(caseId, caseData.name);
-      heading.appendChild(deleteBtn);
+      actions.appendChild(deleteBtn);
     }
+    heading.appendChild(actions);
     wrap.appendChild(heading);
 
     const tabs = document.createElement('div');
@@ -410,6 +434,7 @@ const Cases = (() => {
       { id: 'overview', label: I18n.t('overview'), icon: 'folder' },
       { id: 'evidence', label: I18n.t('evidenceTab'), icon: 'file' },
       { id: 'map', label: I18n.t('evidenceMap'), icon: 'link' },
+      { id: 'search', label: I18n.t('searchTab'), icon: 'search' },
       { id: 'chain', label: I18n.t('chainTab'), icon: 'shieldCheck' },
     ];
     tabDefs.forEach((t) => {
@@ -429,11 +454,13 @@ const Cases = (() => {
       if (alertsEl) body.appendChild(alertsEl);
       body.appendChild(await renderCaseSummary(caseId));
       body.appendChild(await renderOverview(caseId, caseData));
-      body.appendChild(await renderMembers(caseId));
+      body.appendChild(await renderMembers(caseId, caseData));
     } else if (tab === 'evidence') {
       body.appendChild(await Evidence.renderTab(caseId));
     } else if (tab === 'map') {
       body.appendChild(await EvidenceMap.renderTab(caseId));
+    } else if (tab === 'search') {
+      body.appendChild(await Search.renderTab(caseId));
     } else if (tab === 'chain') {
       body.appendChild(await Chain.renderTab(caseId));
     }
@@ -461,24 +488,17 @@ const Cases = (() => {
 
     alerts.forEach((a) => {
       const row = document.createElement('div');
-      row.className = 'alert alert-warning mt-3';
+      row.className = 'alert alert-warning mt-3 alert-clickable';
       row.style.marginBlockEnd = '0';
-      if (a.visible) {
-        row.textContent = a.other_evidence_filename
-          ? I18n.t('crossCaseAlertVisible', {
-              filename: a.evidence_filename,
-              otherFilename: a.other_evidence_filename,
-              caseName: a.other_case_name,
-            })
-          : I18n.t('crossCaseAlertVisibleCaseOnly', {
-              filename: a.evidence_filename,
-              caseName: a.other_case_name,
-            });
-        row.style.cursor = 'pointer';
-        row.onclick = () => State.set({ route: { name: 'case', caseId: a.other_case_id, tab: 'overview' } });
-      } else {
-        row.textContent = I18n.t('crossCaseAlertHidden', { filename: a.evidence_filename });
-      }
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      const reasons = (a.reasons || []).slice(0, 3).map((r) => `${I18n.t('reason_' + r.type)}: ${r.value}`).join(' · ');
+      row.innerHTML = `${UI.icon('link', '', 16)} <div style="flex:1;"><div dir="auto">${UI.escapeHtml(I18n.t('crossCaseAlertVisible', {
+        filename: a.evidence_filename, otherFilename: a.other_evidence_filename, caseName: a.other_case_name,
+      }))}</div>${reasons ? `<div class="text-xs" style="opacity:.85;" dir="auto">${UI.escapeHtml(reasons)}</div>` : ''}</div>`;
+      const go = () => State.set({ route: { name: 'case', caseId: a.other_case_id, tab: 'overview' } });
+      row.onclick = go;
+      row.onkeydown = (e) => { if (e.key === 'Enter') go(); };
       el.appendChild(row);
     });
 
@@ -488,7 +508,7 @@ const Cases = (() => {
   async function renderCaseSummary(caseId) {
     const el = document.createElement('div');
     el.className = 'card mt-4';
-    el.innerHTML = `<h3>${I18n.t('caseSummaryTitle')}</h3><div id="summary-body" class="mt-3"><p class="text-muted">…</p></div>`;
+    el.innerHTML = `<h3>${I18n.t('caseSummaryTitle')}</h3><div id="summary-body" class="mt-3">${UI.spinner()}</div>`;
     const body = el.querySelector('#summary-body');
 
     function renderResult(data) {
@@ -511,7 +531,7 @@ const Cases = (() => {
       if (data.status === 'FAILED') {
         const div = document.createElement('div');
         div.className = 'alert alert-danger';
-        div.textContent = data.message_en || I18n.t('genericError');
+        div.textContent = (I18n.getLang() === 'ar' ? data.message_ar : data.message_en) || I18n.t('genericError');
         body.appendChild(div);
         appendRefreshButton();
         return;
@@ -532,7 +552,7 @@ const Cases = (() => {
       if (data.generated_at) {
         const meta = document.createElement('div');
         meta.className = 'text-muted text-xs mt-3';
-        meta.textContent = `${I18n.t('caseSummaryGeneratedAt')}: ${data.generated_at}`;
+        meta.innerHTML = `${I18n.t('caseSummaryGeneratedAt')}: ${UI.dateHtml(data.generated_at)}`;
         body.appendChild(meta);
       }
 
@@ -548,7 +568,7 @@ const Cases = (() => {
     }
 
     async function refresh() {
-      body.innerHTML = `<p class="text-muted text-sm">${I18n.t('caseSummaryGenerating')}</p>`;
+      body.innerHTML = UI.spinner(I18n.t('caseSummaryGenerating'));
       try {
         const data = await Api.generateCaseSummary(caseId);
         renderResult(data);
@@ -569,7 +589,7 @@ const Cases = (() => {
         data.status === 'NOT_GENERATED' ||
         (data.status === 'SUCCESS' && data.lang && data.lang !== I18n.getLang());
       if (needsGeneration) {
-        body.innerHTML = `<p class="text-muted text-sm">${I18n.t('caseSummaryGenerating')}</p>`;
+        body.innerHTML = UI.spinner(I18n.t('caseSummaryGenerating'));
         try {
           data = await Api.generateCaseSummary(caseId);
         } catch (e) {
@@ -628,21 +648,22 @@ const Cases = (() => {
     return el;
   }
 
-  // Who can see this case. Membership is what gates every case-scoped
-  // endpoint (and which cross-case alerts show full detail), so admins
-  // need a way to grant it without using the API by hand.
-  async function renderMembers(caseId) {
+  // Who can see this case. Only the case OWNER can share it, by typing the
+  // other person's exact e-mail (no user directory to browse), and only the
+  // owner can remove members. Platform admins have no special access.
+  async function renderMembers(caseId, caseData) {
     const el = document.createElement('div');
     el.className = 'card mt-4';
-    const isAdmin = State.get().user && State.get().user.role === 'ADMIN';
+    const isOwner = !!caseData.is_owner;
+    const me = State.get().user;
 
     async function load() {
-      el.innerHTML = `<h3 style="display:flex; align-items:center; gap:8px; margin-top:0;">${UI.icon('user', '', 18)} <span>${I18n.t('caseMembers')}</span></h3><p class="text-muted">…</p>`;
+      el.innerHTML = `<h3 style="display:flex; align-items:center; gap:8px; margin-top:0;">${UI.icon('user', '', 18)} <span>${I18n.t('caseMembers')}</span></h3>${UI.spinner()}`;
       let members;
       try {
         members = await Api.listMembers(caseId);
       } catch (e) {
-        el.innerHTML += `<div class="alert alert-danger">${I18n.t('genericError')}</div>`;
+        el.innerHTML += `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(e))}</div>`;
         return;
       }
 
@@ -651,9 +672,10 @@ const Cases = (() => {
           (m) => `
           <span class="examiner-profile-pill" title="${UI.escapeHtml(m.username)}">
             <span class="examiner-avatar">${UI.icon('user', '', 12)}</span>
-            <span>${UI.escapeHtml(m.full_name || m.username)} · <span class="text-muted">${
-              m.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator')
+            <span class="examiner-name">${UI.escapeHtml(m.full_name || m.username)} · <span class="text-muted">${
+              m.is_owner ? I18n.t('caseOwner') : m.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator')
             }</span></span>
+            ${isOwner && !m.is_owner ? `<button type="button" class="chip-remove" data-remove="${m.id}" data-name="${UI.escapeHtml(m.full_name || m.username)}" aria-label="${I18n.t('removeMember')}" title="${I18n.t('removeMember')}">${UI.icon('x', '', 12)}</button>` : ''}
           </span>`
         )
         .join('');
@@ -664,54 +686,56 @@ const Cases = (() => {
         <div class="flex gap-2" style="flex-wrap:wrap;">${chips}</div>
         <div id="members-admin"></div>
       `;
+      el.querySelectorAll('[data-remove]').forEach((b) => {
+        b.onclick = async () => {
+          const ok = await UI.confirmDialog({
+            title: I18n.t('removeMember'),
+            message: I18n.t('removeMemberConfirm', { name: `<strong dir="auto">${UI.escapeHtml(b.dataset.name)}</strong>` }),
+            confirmLabel: I18n.t('removeMember'),
+          });
+          if (!ok) return;
+          try {
+            await Api.removeMember(caseId, Number(b.dataset.remove));
+            Notifications.refresh();
+            UI.toast(I18n.t('memberRemoved'));
+            await load();
+          } catch (err) { UI.toast(UI.errorMessage(err), 'error'); }
+        };
+      });
 
-      if (!isAdmin) return;
-
-      let directory = [];
-      try {
-        directory = await Api.userDirectory();
-      } catch (e) {
+      const box = el.querySelector('#members-admin');
+      if (!isOwner) {
+        box.innerHTML = `<p class="text-muted text-xs mt-3">${I18n.t('onlyOwnerShares')}</p>`;
         return;
       }
-      const memberIds = new Set(members.map((m) => m.id));
-      const candidates = directory.filter((u) => !memberIds.has(u.id));
-      const adminBox = el.querySelector('#members-admin');
-
-      if (candidates.length === 0) {
-        adminBox.innerHTML = `<p class="text-muted text-sm mt-3">${I18n.t('allUsersAreMembers')}</p>`;
-        return;
-      }
-
-      adminBox.innerHTML = `
-        <div id="members-error" class="mt-3"></div>
-        <div class="flex gap-2 mt-3" style="flex-wrap:wrap; align-items:center;">
-          <select id="member-select" style="flex:1; min-width:220px;">
-            ${candidates
-              .map(
-                (u) =>
-                  `<option value="${u.id}">${UI.escapeHtml(u.full_name || u.username)} (${UI.escapeHtml(u.username)})</option>`
-              )
-              .join('')}
-          </select>
-          <button type="button" class="btn btn-primary" id="member-add-btn">
-            ${UI.icon('plus', '', 16)} <span>${I18n.t('addMember')}</span>
-          </button>
-        </div>
+      box.innerHTML = `
+        <form id="member-form" class="mt-3" novalidate>
+          <label for="member-email" class="text-sm">${I18n.t('addMemberByEmail')}</label>
+          <div class="flex gap-2 mt-1" style="flex-wrap:wrap; align-items:center;">
+            <input id="member-email" type="email" dir="ltr" autocapitalize="off" placeholder="name@gmail.com" style="flex:1; min-width:220px;" />
+            <button type="submit" class="btn btn-primary" id="member-add-btn">${UI.icon('plus', '', 16)} <span>${I18n.t('addMember')}</span></button>
+          </div>
+          <div id="members-error" class="mt-2" aria-live="polite"></div>
+          <p class="text-muted text-xs mt-1">${I18n.t('addMemberNote')}</p>
+        </form>
       `;
-      const addBtn = adminBox.querySelector('#member-add-btn');
-      addBtn.onclick = async () => {
-        const userId = Number(adminBox.querySelector('#member-select').value);
-        addBtn.disabled = true;
+      box.querySelector('#member-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = box.querySelector('#member-email').value.trim();
+        const err = box.querySelector('#members-error');
+        if (!email) { err.innerHTML = `<div class="alert alert-danger">${I18n.t('fillAllFields')}</div>`; return; }
+        const btn = box.querySelector('#member-add-btn');
+        btn.disabled = true;
         try {
-          await Api.addMember(caseId, userId);
+          await Api.addMember(caseId, email);
           Notifications.refresh();
+          UI.toast(I18n.t('memberAdded'));
           await load();
-        } catch (err) {
-          addBtn.disabled = false;
-          adminBox.querySelector('#members-error').innerHTML =
-            `<div class="alert alert-danger">${UI.escapeHtml(err.message)}</div>`;
+        } catch (ex) {
+          btn.disabled = false;
+          err.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(ex))}</div>`;
         }
-      };
+      });
     }
 
     await load();

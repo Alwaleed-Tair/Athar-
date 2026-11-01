@@ -363,8 +363,8 @@ const I18n = (() => {
       priorityMedium: 'متوسطة',
       priorityLow: 'منخفضة',
       classificationTopSecret: 'سري للغاية',
-      classificationRestricted: 'مقيد (Restricted)',
-      classificationConfidential: 'سري للأدلة الجنائية (Confidential forensic)',
+      classificationRestricted: 'مقيّد',
+      classificationConfidential: 'سري للأدلة الجنائية',
       classificationInternal: 'للاستخدام الداخلي فقط',
 
       createCaseContainer: 'إنشاء حاوية القضية',
@@ -374,7 +374,7 @@ const I18n = (() => {
       caseTitleLabel: 'اسم القضية / العنوان',
       caseTitleHint: 'الاسم يتضمن حروف ويسمح استخدام الأرقام و En Dash (-)',
       prioritySelect: 'الأولوية (Priority)',
-      classificationSelect: 'درجة السرية (Classification Tag)',
+      classificationSelect: 'درجة السرية',
       statusSelect: 'الحالة (Status)',
       initialDescription: 'الوصف الأولي المختصر',
       caseFilesCount: 'الملفات: {count} أدلة',
@@ -427,11 +427,19 @@ const I18n = (() => {
     let str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
     if (vars) {
       Object.keys(vars).forEach((k) => {
-        str = str.replace(`{${k}}`, vars[k]);
+        str = str.split(`{${k}}`).join(vars[k]);
       });
     }
     return str;
   }
 
-  return { getLang, setLang, dirFor, t };
+  // Lets later files add strings without editing this one (i18n-extra.js).
+  function extend(lang, dict) {
+    STRINGS[lang] = Object.assign(STRINGS[lang] || {}, dict);
+  }
+  function has(key) {
+    return !!((STRINGS[getLang()] && STRINGS[getLang()][key]) || STRINGS.en[key]);
+  }
+
+  return { getLang, setLang, dirFor, t, has, extend };
 })();

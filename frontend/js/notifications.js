@@ -57,7 +57,8 @@ const Notifications = (() => {
 
   function alertText(a) {
     if (!a.visible) return I18n.t('crossCaseAlertHidden', { filename: a.evidence_filename });
-    return a.other_evidence_filename
+    const why = (a.reasons || []).slice(0, 2).map((r) => `${I18n.t('reason_' + r.type)}: ${r.value}`).join(' · ');
+    return (why ? `${why} — ` : '') + (a.other_evidence_filename
       ? I18n.t('crossCaseAlertVisible', {
           filename: a.evidence_filename,
           otherFilename: a.other_evidence_filename,
@@ -66,7 +67,7 @@ const Notifications = (() => {
       : I18n.t('crossCaseAlertVisibleCaseOnly', {
           filename: a.evidence_filename,
           caseName: a.other_case_name,
-        });
+        }));
   }
 
   // --- Fetch + dedupe ---------------------------------------------------

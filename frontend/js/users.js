@@ -23,7 +23,7 @@ const Users = (() => {
     wrap.appendChild(listCard);
 
     async function load() {
-      listCard.innerHTML = `<p class="text-muted">…</p>`;
+      listCard.innerHTML = UI.spinner();
       let users;
       try {
         users = await Api.listUsers();
@@ -43,7 +43,11 @@ const Users = (() => {
             <td><span class="ui-badge ${u.role === 'ADMIN' ? 'badge-high' : 'badge-active'}">${
               u.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator')
             }</span></td>
-            <td class="text-muted text-sm">${UI.escapeHtml((u.created_at || '').slice(0, 10))}</td>
+            <td>${u.email_verified
+              ? `<span class="ui-badge badge-active">${UI.icon('check', '', 12)} ${I18n.t('accountVerified')}</span>`
+              : `<span class="ui-badge badge-pending">${I18n.t('accountNotVerified')}</span>
+                 <button type="button" class="btn btn-sm" data-verify="${u.id}" data-name="${UI.escapeHtml(u.full_name || u.username)}">${I18n.t('activateAccount')}</button>`}</td>
+            <td class="text-muted text-sm">${UI.dateHtml(u.created_at, { time: false })}</td>
             <td style="text-align:end;">
               <button type="button" class="btn btn-sm btn-ghost" data-reset="${u.id}" data-name="${UI.escapeHtml(u.full_name || u.username)}">
                 ${UI.icon('key', '', 14)} <span>${I18n.t('resetPassword')}</span>
@@ -59,6 +63,7 @@ const Users = (() => {
               <th>${I18n.t('fullName')}</th>
               <th>${I18n.t('usernameOrEmail')}</th>
               <th>${I18n.t('role')}</th>
+              <th>${I18n.t('accountEmailStatus')}</th>
               <th>${I18n.t('createdAt')}</th>
               <th></th>
             </tr></thead>
@@ -66,6 +71,21 @@ const Users = (() => {
           </table>
         </div>
       `;
+      listCard.querySelectorAll('[data-verify]').forEach((btn) => {
+        btn.onclick = async () => {
+          const ok = await UI.confirmDialog({
+            title: I18n.t('activateAccount'),
+            message: I18n.t('activateAccountConfirm', { name: `<strong dir="auto">${btn.dataset.name}</strong>` }),
+            confirmLabel: I18n.t('activateAccount'), danger: false, icon: 'userCheck',
+          });
+          if (!ok) return;
+          try {
+            await Api.adminVerifyUser(Number(btn.dataset.verify));
+            UI.toast(I18n.t('accountActivated'));
+            load();
+          } catch (e) { UI.toast(UI.errorMessage(e), 'error'); }
+        };
+      });
       listCard.querySelectorAll('[data-reset]').forEach((btn) => {
         btn.onclick = () => openResetPasswordModal(Number(btn.dataset.reset), btn.dataset.name);
       });
@@ -73,6 +93,34 @@ const Users = (() => {
 
     header.querySelector('#btn-new-user').onclick = () => openCreateUserModal(load);
     await load();
+
+    // --- Contact-form inbox (admins only) -----------------------------------------
+    const inbox = document.createElement('div');
+    inbox.className = 'card mt-4';
+    wrap.appendChild(inbox);
+    async function loadInbox() {
+      inbox.innerHTML = `<h3 style="display:flex; align-items:center; gap:8px;">${UI.icon('mail', '', 20)} <span>${I18n.t('contactInbox')}</span></h3>${UI.spinner()}`;
+      let msgs;
+      try { msgs = await Api.listContactMessages(); } catch (e) {
+        inbox.innerHTML += `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(e))}</div>`; return;
+      }
+      const rows = msgs.length ? msgs.map((m) => `
+        <div class="inbox-item ${m.handled ? 'handled' : ''}">
+          <div class="flex gap-2" style="justify-content:space-between; flex-wrap:wrap; align-items:center;">
+            <div><strong dir="auto">${UI.escapeHtml(m.subject)}</strong> <span class="chip chip-soft">${I18n.t('contactCat' + m.category.charAt(0) + m.category.slice(1).toLowerCase())}</span></div>
+            <span class="text-muted text-xs">${UI.dateHtml(m.created_at)}</span>
+          </div>
+          <div class="text-sm text-muted"><bdi dir="auto">${UI.escapeHtml(m.name)}</bdi> · <bdi dir="ltr">${UI.escapeHtml(m.email)}</bdi></div>
+          <div class="mt-1" dir="auto" style="white-space:pre-wrap;">${UI.escapeHtml(m.message)}</div>
+          ${m.handled ? `<span class="ui-badge badge-active mt-1">${UI.icon('check', '', 12)} ${I18n.t('contactHandled')}</span>`
+            : `<button type="button" class="btn btn-sm mt-2" data-handled="${m.id}">${I18n.t('contactMarkHandled')}</button>`}
+        </div>`).join('') : `<p class="text-muted">${I18n.t('contactInboxEmpty')}</p>`;
+      inbox.innerHTML = `<h3 style="display:flex; align-items:center; gap:8px;">${UI.icon('mail', '', 20)} <span>${I18n.t('contactInbox')}</span></h3>${rows}`;
+      inbox.querySelectorAll('[data-handled]').forEach((b) => {
+        b.onclick = async () => { try { await Api.markContactHandled(Number(b.dataset.handled)); loadInbox(); } catch (e) { UI.toast(UI.errorMessage(e), 'error'); } };
+      });
+    }
+    await loadInbox();
     return wrap;
   }
 
