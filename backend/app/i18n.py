@@ -77,6 +77,58 @@ TEMPLATES = {
         "en": "{username} ran an authenticity check on evidence \"{filename}\"",
         "ar": "شغّل {username} فحص الأصالة على الدليل \"{filename}\"",
     },
+    "EMAIL_VERIFIED": {
+        "en": "{username} verified their e-mail address",
+        "ar": "وثّق {username} بريده الإلكتروني",
+    },
+    "EMAIL_VERIFIED_BY_ADMIN": {
+        "en": "Admin {actor_username} manually activated the account of {target_username}",
+        "ar": "فعّل المسؤول {actor_username} حساب {target_username} يدوياً",
+    },
+    "PROFILE_UPDATED": {
+        "en": "{username} updated their profile name to \"{full_name}\"",
+        "ar": "حدّث {username} اسمه في الملف الشخصي إلى \"{full_name}\"",
+    },
+    "PASSWORD_CHANGED": {
+        "en": "{username} changed their password",
+        "ar": "غيّر {username} كلمة المرور",
+    },
+    "EVIDENCE_UPDATED": {
+        "en": "{username} edited the details of \"{filename}\" ({fields})",
+        "ar": "عدّل {username} بيانات الدليل \"{filename}\" ({fields})",
+    },
+    "EVIDENCE_DELETED": {
+        "en": "{username} deleted evidence \"{filename}\" (sha256 {sha256_short}…); the file is retained until {purge_after}",
+        "ar": "حذف {username} الدليل \"{filename}\" (بصمة {sha256_short}…)؛ يُحتفظ بالملف حتى {purge_after}",
+    },
+    "EVIDENCE_PURGED": {
+        "en": "Retention period ended: stored file of deleted evidence \"{filename}\" (sha256 {sha256_short}…) was permanently removed",
+        "ar": "انتهت مدة الاحتفاظ: أُزيل نهائياً الملف المخزّن للدليل المحذوف \"{filename}\" (بصمة {sha256_short}…)",
+    },
+    "EVIDENCE_INTEGRITY_CHECKED": {
+        "en": "{username} verified the file integrity of \"{filename}\": {result}",
+        "ar": "تحقق {username} من سلامة ملف الدليل \"{filename}\": {result}",
+    },
+    "EVIDENCE_CONVERSATION_PARSED": {
+        "en": "Conversation content of \"{filename}\" was extracted ({count} messages, format {format})",
+        "ar": "استُخرج محتوى المحادثة من \"{filename}\" ({count} رسالة، الصيغة {format})",
+    },
+    "CONVERSATION_SUMMARY_GENERATED": {
+        "en": "{username} generated a conversation summary for \"{filename}\"",
+        "ar": "ولّد {username} ملخص المحادثة للدليل \"{filename}\"",
+    },
+    "REPORT_GENERATED": {
+        "en": "{username} exported the PDF report for case \"{case_name}\" ({evidence_count} evidence items, chain intact: {intact})",
+        "ar": "صدّر {username} التقرير القانوني (PDF) للقضية \"{case_name}\" ({evidence_count} دليل، السلسلة سليمة: {intact})",
+    },
+    "CASE_SEARCHED": {
+        "en": "{username} searched case \"{case_name}\"",
+        "ar": "بحث {username} في القضية \"{case_name}\"",
+    },
+    "MEMBER_REMOVED": {
+        "en": "{actor_username} removed {member_username} from this case",
+        "ar": "أزال {actor_username} المستخدم {member_username} من هذه القضية",
+    },
     "CHAIN_VERIFIED": {
         "en": "{username} ran a chain-of-custody verification (intact: {intact})",
         "ar": "شغّل {username} تحققاً من سلسلة العهدة (سليمة: {intact})",
@@ -97,6 +149,13 @@ CATEGORY_LABELS = {
 }
 
 
+RESULT_LABELS = {
+    "MATCH": {"en": "hash matches the value recorded at upload", "ar": "البصمة مطابقة للقيمة المسجلة عند الرفع"},
+    "MISMATCH": {"en": "HASH MISMATCH - file differs from the recorded original", "ar": "عدم تطابق - الملف يختلف عن الأصل المسجل"},
+    "MISSING": {"en": "stored file is missing", "ar": "الملف المخزّن مفقود"},
+}
+
+
 def build_message(action: str, params: dict, lang: Optional[str]) -> str:
     lang = lang if lang in config.SUPPORTED_LANGS else config.DEFAULT_LANG
     entry = TEMPLATES.get(action)
@@ -105,6 +164,8 @@ def build_message(action: str, params: dict, lang: Optional[str]) -> str:
     template = entry.get(lang, entry.get(config.DEFAULT_LANG, action))
     if "category" in params and params["category"] in CATEGORY_LABELS:
         params = {**params, "category": CATEGORY_LABELS[params["category"]].get(lang, params["category"])}
+    if "result" in params and params["result"] in RESULT_LABELS:
+        params = {**params, "result": RESULT_LABELS[params["result"]].get(lang, params["result"])}
     try:
         return template.format(**params)
     except (KeyError, IndexError):

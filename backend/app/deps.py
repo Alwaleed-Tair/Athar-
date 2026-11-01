@@ -22,16 +22,26 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> dic
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, full_name, role FROM users WHERE id = ?", (int(payload["sub"]),)
+            "SELECT id, username, full_name, role, email, email_verified, token_version "
+            "FROM users WHERE id = ?",
+            (int(payload["sub"]),),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+    # A password change/reset bumps token_version, which ends every session
+    # issued before it.
+    if int(payload.get("tv", 0)) != int(row["token_version"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    # Unverified accounts must not reach any protected function.
+    if not row["email_verified"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="EMAIL_NOT_VERIFIED")
 
     return {
         "id": row["id"],
         "username": row["username"],
         "full_name": row["full_name"] or "",
         "role": row["role"],
+        "email": row["email"] or "",
     }
 
 
@@ -56,3 +66,14 @@ def require_case_member(case_id: int, user: dict = Depends(get_current_user)) ->
         if not member_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     return user
+
+
+
+def can_manage_evidence(user: dict, ev_row, case_row) -> bool:
+    """
+    Who may edit/delete an evidence item: the person who uploaded it, or
+    the owner (creator) of the case it belongs to. Other case members can
+    read it but cannot change or remove it. (Case membership itself is
+    checked separately and returns 404 to outsiders.)
+    """
+    return user["id"] == ev_row["uploaded_by"] or user["id"] == case_row["created_by"]

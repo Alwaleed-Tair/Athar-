@@ -21,6 +21,8 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(config.DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -115,6 +117,67 @@ CREATE TABLE IF NOT EXISTS case_summary (
     generated_at TEXT NOT NULL
 );
 
+-- One-time e-mail tokens (verification). Only a SHA-256 of the token is
+-- stored, so a database leak does not leak usable links.
+CREATE TABLE IF NOT EXISTS email_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    purpose TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+
+-- Full extracted text of an evidence item (derived data, rebuilt from the
+-- untouched original file; removed when the evidence is deleted). Used
+-- for search and similarity -- never for anything that alters the file.
+CREATE TABLE IF NOT EXISTS evidence_text (
+    evidence_id INTEGER PRIMARY KEY REFERENCES evidence(id),
+    text TEXT NOT NULL,
+    extracted_at TEXT NOT NULL
+);
+
+-- Parsed conversation (chat export) metadata + messages. Derived from the
+-- original file, which is never modified. source_ref says where in the
+-- original each message came from (line number / page).
+CREATE TABLE IF NOT EXISTS conversations (
+    evidence_id INTEGER PRIMARY KEY REFERENCES evidence(id),
+    format TEXT NOT NULL,
+    participants_json TEXT NOT NULL DEFAULT '[]',
+    message_count INTEGER NOT NULL DEFAULT 0,
+    first_ts TEXT,
+    last_ts TEXT,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    parsed_at TEXT NOT NULL,
+    summary_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evidence_id INTEGER NOT NULL REFERENCES evidence(id),
+    idx INTEGER NOT NULL,
+    sender TEXT,
+    ts TEXT,
+    ts_raw TEXT,
+    body TEXT NOT NULL,
+    source_ref TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_ev ON chat_messages(evidence_id, idx);
+
+CREATE TABLE IF NOT EXISTS contact_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    category TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    emailed INTEGER NOT NULL DEFAULT 0,
+    handled INTEGER NOT NULL DEFAULT 0
+);
+
 -- Caches the last authenticity check (deterministic EXIF indicators +
 -- approximate AI visual triage) per evidence item, same caching pattern
 -- as evidence_analysis: auto-generated once, refreshed only on request.
@@ -152,6 +215,23 @@ def init_db() -> None:
         _ensure_column(conn, "cases", "priority", "TEXT NOT NULL DEFAULT 'MEDIUM'")
         _ensure_column(conn, "cases", "classification", "TEXT NOT NULL DEFAULT 'RESTRICTED'")
         _ensure_column(conn, "users", "full_name", "TEXT NOT NULL DEFAULT ''")
+        # Accounts that existed before e-mail verification are treated as
+        # verified (default 1); new self-registrations insert 0 explicitly.
+        _ensure_column(conn, "users", "email", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "users", "email_verified", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "users", "token_version", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "updated_at", "TEXT")
+        conn.execute("UPDATE users SET email = username WHERE email = '' AND instr(username, '@') > 0")
+        _ensure_column(conn, "evidence", "title", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "evidence", "description", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "evidence", "updated_at", "TEXT")
+        _ensure_column(conn, "evidence", "updated_by", "INTEGER")
+        _ensure_column(conn, "evidence", "deleted_at", "TEXT")
+        _ensure_column(conn, "evidence", "deleted_by", "INTEGER")
+        _ensure_column(conn, "evidence", "purged_at", "TEXT")
+        _ensure_column(conn, "evidence", "last_verified_at", "TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id, deleted_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_sha ON evidence(sha256)")
         # Databases created before full_name existed: give the bootstrap
         # admin its display name (other users keep showing their username
         # until an admin recreates them with a name).
@@ -169,8 +249,8 @@ def init_db() -> None:
 
             now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
             conn.execute(
-                "INSERT INTO users (username, full_name, password_hash, role, created_at) "
-                "VALUES (?, ?, ?, 'ADMIN', ?)",
+                "INSERT INTO users (username, full_name, password_hash, role, created_at, email_verified) "
+                "VALUES (?, ?, ?, 'ADMIN', ?, 1)",
                 (
                     config.DEFAULT_ADMIN_USERNAME,
                     config.DEFAULT_ADMIN_FULL_NAME,

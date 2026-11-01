@@ -20,17 +20,33 @@ STORAGE_DIR = Path(os.environ.get("ATHAR_STORAGE_DIR", str(BACKEND_DIR / "storag
 EVIDENCE_DIR = STORAGE_DIR / "evidence"
 DB_PATH = STORAGE_DIR / "athar.db"
 
-# JWT secret must come from environment. We generate a random one at import
-# time ONLY as a last-resort dev fallback so the app doesn't crash on first
-# run, but this means tokens won't survive a restart unless ATHAR_JWT_SECRET
-# is set explicitly. This is flagged clearly in the README.
+# JWT secret: taken from ATHAR_JWT_SECRET when set. Otherwise a random
+# secret is generated ONCE and persisted in the storage directory
+# (chmod 600) so sessions survive a restart. If the storage directory is
+# not writable we fall back to an in-memory secret (sessions then end on
+# restart) and say so at startup.
 JWT_SECRET = os.environ.get("ATHAR_JWT_SECRET")
+JWT_SECRET_SOURCE = "env"
 if not JWT_SECRET:
     import secrets
-    JWT_SECRET = secrets.token_hex(32)
-    JWT_SECRET_IS_EPHEMERAL = True
-else:
-    JWT_SECRET_IS_EPHEMERAL = False
+
+    _secret_file = STORAGE_DIR / ".jwt_secret"
+    try:
+        STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        if _secret_file.exists():
+            JWT_SECRET = _secret_file.read_text().strip()
+        if not JWT_SECRET:
+            JWT_SECRET = secrets.token_hex(32)
+            _secret_file.write_text(JWT_SECRET)
+            try:
+                os.chmod(_secret_file, 0o600)
+            except OSError:
+                pass
+        JWT_SECRET_SOURCE = "file"
+    except OSError:
+        JWT_SECRET = secrets.token_hex(32)
+        JWT_SECRET_SOURCE = "memory"
+JWT_SECRET_IS_EPHEMERAL = JWT_SECRET_SOURCE == "memory"
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.environ.get("ATHAR_JWT_EXPIRE_MINUTES", "480"))
@@ -51,7 +67,11 @@ ATHAR_AI_VISION_MODEL = os.environ.get("ATHAR_AI_VISION_MODEL", "deepseek-v4-fla
 
 # Upload limits
 MAX_UPLOAD_BYTES = int(os.environ.get("ATHAR_MAX_UPLOAD_MB", "50")) * 1024 * 1024
-BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".ps1", ".sh", ".js", ".jar"}
+BLOCKED_EXTENSIONS = {
+    ".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi", ".ps1", ".psm1",
+    ".sh", ".js", ".mjs", ".vbs", ".vbe", ".jar", ".apk", ".app", ".lnk",
+    ".reg", ".hta", ".cpl", ".php", ".py",
+}
 
 # Manual evidence categories (investigator-assigned, not AI-suggested).
 # Add/remove entries here; i18n.py in the frontend has the display labels.
@@ -76,3 +96,42 @@ TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
 
 SUPPORTED_LANGS = {"en", "ar"}
 DEFAULT_LANG = "en"
+
+
+# --- Public URL / e-mail ------------------------------------------------
+# Base URL used to build the e-mail verification link. Leave empty to
+# derive it from the incoming request (works behind Render's proxy).
+PUBLIC_URL = os.environ.get("ATHAR_PUBLIC_URL", "").rstrip("/")
+
+# Outgoing e-mail (verification + contact form notifications). Plain SMTP
+# so it works with any provider (Brevo, Mailgun, Gmail app password...).
+# Nothing is faked: if SMTP_HOST is empty, mail is NOT sent and the API
+# says so (see mailer.py); an admin can then activate accounts by hand.
+SMTP_HOST = os.environ.get("ATHAR_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("ATHAR_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("ATHAR_SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("ATHAR_SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("ATHAR_SMTP_FROM", SMTP_USER)
+SMTP_SECURITY = os.environ.get("ATHAR_SMTP_SECURITY", "starttls").lower()  # starttls | ssl | none
+# Development only: print outgoing mail (incl. verification links) to the
+# server log instead of sending. Never enable in production.
+MAIL_CONSOLE = os.environ.get("ATHAR_MAIL_CONSOLE", "").lower() in ("1", "true", "yes")
+CONTACT_TO = os.environ.get("ATHAR_CONTACT_TO", "")
+
+EMAIL_TOKEN_TTL_HOURS = int(os.environ.get("ATHAR_EMAIL_TOKEN_TTL_HOURS", "24"))
+EMAIL_RESEND_COOLDOWN_SECONDS = int(os.environ.get("ATHAR_EMAIL_RESEND_COOLDOWN", "60"))
+
+# --- Login throttling ---------------------------------------------------
+LOGIN_MAX_FAILURES = int(os.environ.get("ATHAR_LOGIN_MAX_FAILURES", "5"))
+LOGIN_LOCK_SECONDS = int(os.environ.get("ATHAR_LOGIN_LOCK_SECONDS", "900"))
+
+# --- Evidence retention -------------------------------------------------
+# Deleting evidence is a soft delete: it disappears from every list, map,
+# search and report immediately, but the stored file and its hash are kept
+# for this many days (custody integrity / recovery from mistakes) and are
+# then permanently purged. The audit-log rows are never removed.
+EVIDENCE_RETENTION_DAYS = int(os.environ.get("ATHAR_EVIDENCE_RETENTION_DAYS", "30"))
+
+# Conversation parsing limits
+MAX_CHAT_MESSAGES = 100_000
+MAX_FULLTEXT_CHARS = 2_000_000

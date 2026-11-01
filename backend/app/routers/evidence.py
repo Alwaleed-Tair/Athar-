@@ -4,14 +4,15 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .. import analysis, audit, config, i18n
+from .. import analysis, audit, chats, config, i18n, integrity, relations, textindex
 from ..database import get_conn
-from ..deps import get_current_user, require_case_member
+from ..deps import can_manage_evidence, get_current_user, require_case_member
 
 router = APIRouter(prefix="/api", tags=["evidence"])
 
@@ -19,37 +20,30 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".bmp", "
 CHUNK_SIZE = 1024 * 1024  # 1 MiB
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
+
+
 def build_evidence_ai_items(conn, case_id: int) -> list[dict]:
     """
-    Returns every evidence item in a case as the common "give the AI
-    everything we can extract" payload shared by the evidence map, the
-    case summary, and (in spirit) the per-item analysis endpoint: id,
-    filename, sha256, uploaded_at, capture_time (the real EXIF capture
-    timestamp, when present -- NOT the same as uploaded_at, see below),
-    device (from EXIF), category, and -- where available --
-    content_excerpt (text/PDF/Word) or visual_description (images, via
-    the vision model). Building this once here avoids re-implementing
-    the same extraction loop in three places.
-
-    capture_time vs uploaded_at: uploaded_at is when someone added the
-    file to THIS system and reflects the investigator's own workflow
-    (e.g. uploading a backlog of unrelated files back-to-back), not
-    anything about the evidence itself -- it is not a meaningful
-    forensic timing signal on its own. capture_time (EXIF DateTime) is
-    when the content was actually created/captured and is what genuinely
-    matters for timing analysis. Both are included so callers (and the
-    AI prompts) can prefer capture_time and treat uploaded_at proximity
-    as weak/non-evidence on its own.
+    Every (non-deleted) evidence item of a case as the common payload shared
+    by the evidence map and the case summary: id, filename, sha256, upload
+    DATE (not a precise time: it reflects the investigator's workflow, not
+    the evidence), capture_time (EXIF DateTime -- the real forensic timing
+    signal), device, category, user title/description, and -- where
+    available -- content_excerpt (text/PDF/Word) or visual_description
+    (images, via the vision model). Evidence text is untrusted; the AI
+    layer wraps it as inert data (analysis.untrusted_block).
     """
     rows = conn.execute(
-        "SELECT id, filename, stored_name, sha256, uploaded_at, exif_json, category "
-        "FROM evidence WHERE case_id = ? ORDER BY uploaded_at ASC",
+        "SELECT id, filename, title, description, stored_name, sha256, uploaded_at, exif_json, category "
+        "FROM evidence WHERE case_id = ? AND deleted_at IS NULL ORDER BY uploaded_at ASC",
         (case_id,),
     ).fetchall()
 
     auth_rows = conn.execute(
         "SELECT evidence_id, result_json FROM evidence_authenticity WHERE evidence_id IN "
-        "(SELECT id FROM evidence WHERE case_id = ?)",
+        "(SELECT id FROM evidence WHERE case_id = ? AND deleted_at IS NULL)",
         (case_id,),
     ).fetchall()
     auth_by_evidence_id = {}
@@ -77,20 +71,15 @@ def build_evidence_ai_items(conn, case_id: int) -> list[dict]:
         item = {
             "id": r["id"],
             "filename": r["filename"],
+            "title": r["title"] or None,
+            "description": (r["description"] or None),
             "sha256": r["sha256"],
-            "uploaded_at": r["uploaded_at"],
+            "uploaded_at": (r["uploaded_at"] or "")[:10],
             "capture_time": exif.get("DateTime"),
             "device": device,
             "category": r["category"],
         }
         if r["id"] in auth_by_evidence_id:
-            # A rough, low-confidence AI authenticity verdict (REAL /
-            # FAKE / UNSURE) from a prior "authenticity check" run on
-            # this item, if the investigator ran one. Included so the
-            # summary and map can factor it in and flag it -- not to be
-            # treated as proven, but it must not be silently ignored
-            # either when it's the only thing suggesting an item may not
-            # be genuine.
             item["authenticity_check"] = auth_by_evidence_id[r["id"]]
 
         ext = Path(r["filename"]).suffix
@@ -112,281 +101,39 @@ def build_evidence_ai_items(conn, case_id: int) -> list[dict]:
 @router.get("/cases/{case_id}/cross-case-alerts")
 def cross_case_alerts(case_id: int, user: dict = Depends(require_case_member)):
     """
-    Deterministic (no AI, no threshold) cross-case correlation check:
-    flags when evidence in THIS case shares an exact SHA-256 hash or an
-    exact EXIF device (Make+Model) with evidence in a DIFFERENT,
-    non-deleted case. If the current user isn't a member of that other
-    case, the alert is still returned (so they know a link exists) but
-    without its case name, evidence filename, or ids -- membership
-    isolation applies to what this endpoint reveals, not whether an
-    alert appears at all.
+    Links between evidence of THIS case and evidence of OTHER cases that the
+    current user is ALSO a member of (identical file, same device, shared
+    phone/e-mail/IBAN/URL, shared chat participant, lexical text similarity).
+    Cases the user cannot open are never read or hinted at: there is no
+    "hidden" alert, so this endpoint cannot be used to probe other users'
+    data.
     """
     with get_conn() as conn:
-        alerts = []
-
-        hash_matches = conn.execute(
-            "SELECT r.id AS my_id, r.filename AS my_filename, "
-            "o.id AS other_id, o.filename AS other_filename, "
-            "o.case_id AS other_case_id, c.name AS other_case_name "
-            "FROM evidence r "
-            "JOIN evidence o ON o.sha256 = r.sha256 AND o.case_id != r.case_id "
-            "JOIN cases c ON c.id = o.case_id AND c.status != 'DELETED' "
-            "WHERE r.case_id = ?",
-            (case_id,),
-        ).fetchall()
-        already_matched_pairs = set()
-        for m in hash_matches:
-            already_matched_pairs.add((m["my_id"], m["other_id"]))
-            is_member = (
-                conn.execute(
-                    "SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ?",
-                    (m["other_case_id"], user["id"]),
-                ).fetchone()
-                is not None
-            )
-            alerts.append(_build_cross_case_alert("IDENTICAL_FILE", m, is_member))
-
-        def device_of(exif_json: str):
-            try:
-                exif = json.loads(exif_json)
-            except Exception:
-                exif = {}
-            make, model = exif.get("Make"), exif.get("Model")
-            return f"{make or ''} {model or ''}".strip() or None
-
-        my_rows = conn.execute(
-            "SELECT id, filename, exif_json FROM evidence WHERE case_id = ?", (case_id,)
-        ).fetchall()
-        other_rows = conn.execute(
-            "SELECT e.id, e.filename, e.exif_json, e.case_id, c.name AS case_name "
-            "FROM evidence e JOIN cases c ON c.id = e.case_id "
-            "WHERE e.case_id != ? AND c.status != 'DELETED'",
-            (case_id,),
-        ).fetchall()
-        other_by_device: dict = {}
-        for o in other_rows:
-            d = device_of(o["exif_json"])
-            if d:
-                other_by_device.setdefault(d, []).append(o)
-
-        for r in my_rows:
-            d = device_of(r["exif_json"])
-            if not d:
-                continue
-            for o in other_by_device.get(d, []):
-                if (r["id"], o["id"]) in already_matched_pairs:
-                    continue
-                is_member = (
-                    conn.execute(
-                        "SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ?",
-                        (o["case_id"], user["id"]),
-                    ).fetchone()
-                    is not None
-                )
-                alerts.append(
-                    _build_cross_case_alert(
-                        "SAME_DEVICE",
-                        {
-                            "my_id": r["id"],
-                            "my_filename": r["filename"],
-                            "other_id": o["id"],
-                            "other_filename": o["filename"],
-                            "other_case_id": o["case_id"],
-                            "other_case_name": o["case_name"],
-                        },
-                        is_member,
-                    )
-                )
-
-        # 3) Content mention (deterministic literal text match, no AI):
-        # does a text/PDF/Word file in THIS case literally name another
-        # case, literally name a piece of evidence that belongs to
-        # another case, or literally describe another case's evidence's
-        # EXIF device (e.g. text says "iPhone 14" and another case's
-        # photo has that exact EXIF Model)? This is what catches a
-        # report saying, e.g., "the victim's iPhone 14" -- the hash and
-        # device-to-device checks above only catch identical files or
-        # two items that BOTH have matching EXIF; this also catches a
-        # device only described in prose on one side.
-        # A handful of common device-brand transliterations so an Arabic
-        # mention (e.g. "ايفون 14" or "آيفون 14") matches an EXIF Model
-        # written in Latin script ("iPhone 14"). This is a small, fixed
-        # lookup table, not general translation -- it only covers common
-        # phone brands and won't catch every possible spelling.
-        BRAND_TRANSLITERATIONS = {
-            "iphone": ["ايفون", "آيفون", "أيفون"],
-            "apple": ["ابل", "آبل", "أبل"],
-            "samsung": ["سامسونج", "سامسونغ"],
-            "huawei": ["هواوي"],
-            "xiaomi": ["شاومي"],
-            "oppo": ["اوبو", "أوبو"],
-            "nokia": ["نوكيا"],
-        }
-
-        def device_terms(exif_json: str):
-            try:
-                exif = json.loads(exif_json or "{}")
-            except Exception:
-                exif = {}
-            make, model = exif.get("Make"), exif.get("Model")
-            terms = []
-            if model:
-                model = str(model)
-                terms.append(model)
-                first_word, _, rest = model.partition(" ")
-                for variant in BRAND_TRANSLITERATIONS.get(first_word.lower(), []):
-                    terms.append(f"{variant} {rest}".strip())
-            if make and model:
-                terms.append(f"{make} {model}")
-                for variant in BRAND_TRANSLITERATIONS.get(str(make).lower(), []):
-                    terms.append(f"{variant} {model}".strip())
-            return terms
-
-        other_cases_and_evidence = conn.execute(
-            "SELECT c.id AS case_id, c.name AS case_name, "
-            "e.id AS evidence_id, e.filename AS evidence_filename, e.exif_json AS evidence_exif_json "
-            "FROM cases c LEFT JOIN evidence e ON e.case_id = c.id "
-            "WHERE c.id != ? AND c.status != 'DELETED'",
-            (case_id,),
-        ).fetchall()
-        if other_cases_and_evidence:
-            my_files = conn.execute(
-                "SELECT id, filename, stored_name, exif_json FROM evidence WHERE case_id = ?", (case_id,)
-            ).fetchall()
-            seen_mentions = set()
-            for r in my_files:
-                ext = Path(r["filename"]).suffix
-                file_path = config.EVIDENCE_DIR / r["stored_name"]
-                if not file_path.exists():
-                    continue
-                excerpt = analysis.extract_text_excerpt(str(file_path), ext)
-                if not excerpt:
-                    continue
-                excerpt_lower = excerpt.lower()
-
-                for row in other_cases_and_evidence:
-                    mentioned_case = bool(row["case_name"]) and row["case_name"].lower() in excerpt_lower
-                    mentioned_evidence = (
-                        bool(row["evidence_filename"]) and row["evidence_filename"].lower() in excerpt_lower
-                    )
-                    mentioned_device = row["evidence_exif_json"] and any(
-                        term.lower() in excerpt_lower for term in device_terms(row["evidence_exif_json"])
-                    )
-                    if not (mentioned_case or mentioned_evidence or mentioned_device):
-                        continue
-                    dedup_key = (r["id"], row["case_id"], row["evidence_id"])
-                    if dedup_key in seen_mentions:
-                        continue
-                    seen_mentions.add(dedup_key)
-
-                    is_member = (
-                        conn.execute(
-                            "SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ?",
-                            (row["case_id"], user["id"]),
-                        ).fetchone()
-                        is not None
-                    )
-                    points_to_evidence = mentioned_evidence or mentioned_device
-                    alerts.append(
-                        _build_cross_case_alert(
-                            "CONTENT_MENTION",
-                            {
-                                "my_id": r["id"],
-                                "my_filename": r["filename"],
-                                "other_id": row["evidence_id"] if points_to_evidence else None,
-                                "other_filename": row["evidence_filename"] if points_to_evidence else None,
-                                "other_case_id": row["case_id"],
-                                "other_case_name": row["case_name"],
-                            },
-                            is_member,
-                        )
-                    )
-
-            # 3b) Reverse direction: does an evidence item in ANOTHER case
-            # literally mention THIS case's name, one of THIS case's
-            # evidence filenames, or one of THIS case's evidence's EXIF
-            # device? The forward pass above only catches a mention
-            # written on THIS side; the exact same reference is just as
-            # likely to be written in the OTHER case's report instead,
-            # and detection must not depend on which of the two cases
-            # you happen to be viewing.
-            my_case_row = conn.execute("SELECT name FROM cases WHERE id = ?", (case_id,)).fetchone()
-            my_case_name = my_case_row["name"] if my_case_row else None
-
-            other_evidence_rows = conn.execute(
-                "SELECT e.id, e.filename, e.stored_name, e.case_id, c.name AS case_name "
-                "FROM evidence e JOIN cases c ON c.id = e.case_id "
-                "WHERE e.case_id != ? AND c.status != 'DELETED'",
-                (case_id,),
-            ).fetchall()
-            for o in other_evidence_rows:
-                ext = Path(o["filename"]).suffix
-                file_path = config.EVIDENCE_DIR / o["stored_name"]
-                if not file_path.exists():
-                    continue
-                excerpt = analysis.extract_text_excerpt(str(file_path), ext)
-                if not excerpt:
-                    continue
-                excerpt_lower = excerpt.lower()
-
-                matched_my_id = None
-                matched_my_filename = None
-                for f in my_files:
-                    if f["filename"] and f["filename"].lower() in excerpt_lower:
-                        matched_my_id, matched_my_filename = f["id"], f["filename"]
-                        break
-                    if any(term.lower() in excerpt_lower for term in device_terms(f["exif_json"])):
-                        matched_my_id, matched_my_filename = f["id"], f["filename"]
-                        break
-                mentioned_my_case = bool(my_case_name) and my_case_name.lower() in excerpt_lower
-
-                if not (matched_my_id or mentioned_my_case):
-                    continue
-
-                dedup_key = (matched_my_id, o["case_id"], o["id"])
-                if dedup_key in seen_mentions:
-                    continue
-                seen_mentions.add(dedup_key)
-
-                is_member = (
-                    conn.execute(
-                        "SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ?",
-                        (o["case_id"], user["id"]),
-                    ).fetchone()
-                    is not None
-                )
-                alerts.append(
-                    _build_cross_case_alert(
-                        "CONTENT_MENTION",
-                        {
-                            # If no specific evidence of mine was named,
-                            # fall back to this case's own name as the
-                            # anchor so the alert still reads sensibly.
-                            "my_id": matched_my_id,
-                            "my_filename": matched_my_filename or my_case_name or "",
-                            "other_id": o["id"],
-                            "other_filename": o["filename"],
-                            "other_case_id": o["case_id"],
-                            "other_case_name": o["case_name"],
-                        },
-                        is_member,
-                    )
-                )
-
+        rels = relations.compute_relations(conn, user["id"], case_id, only_other_cases=True)
+    alerts = []
+    for r in rels:
+        types = [x["type"] for x in r["reasons"]]
+        kind = "IDENTICAL_FILE" if "IDENTICAL_FILE" in types else "SAME_DEVICE" if "SAME_DEVICE" in types else "SHARED_CONTENT"
+        alerts.append({
+            "type": kind,
+            "evidence_id": r["evidence_id"],
+            "evidence_filename": r["evidence_name"],
+            "visible": True,
+            "other_case_id": r["other_case_id"],
+            "other_case_name": r["other_case_name"],
+            "other_evidence_id": r["other_evidence_id"],
+            "other_evidence_filename": r["other_evidence_name"],
+            "reasons": r["reasons"],
+        })
     return {"alerts": alerts}
 
 
-def _build_cross_case_alert(alert_type: str, m, is_member: bool) -> dict:
-    return {
-        "type": alert_type,
-        "evidence_id": m["my_id"],
-        "evidence_filename": m["my_filename"],
-        "visible": is_member,
-        "other_case_id": m["other_case_id"] if is_member else None,
-        "other_case_name": m["other_case_name"] if is_member else None,
-        "other_evidence_id": m["other_id"] if is_member else None,
-        "other_evidence_filename": m["other_filename"] if is_member else None,
-    }
+@router.get("/cases/{case_id}/related")
+def related_evidence(case_id: int, user: dict = Depends(require_case_member)):
+    """Relations inside this case and to the user's other cases, each with
+    the concrete reasons (shared values) behind it."""
+    with get_conn() as conn:
+        return {"relations": relations.compute_relations(conn, user["id"], case_id)}
 
 
 @router.get("/cases/{case_id}/evidence-map")
@@ -413,6 +160,7 @@ def evidence_map(case_id: int, user: dict = Depends(require_case_member), lang: 
             "filename": i["filename"],
             "sha256": i["sha256"],
             "uploaded_at": i["uploaded_at"],
+            "title": i.get("title") or "",
             "device": i["device"],
         }
         for i in ai_items
@@ -462,6 +210,8 @@ def evidence_map(case_id: int, user: dict = Depends(require_case_member), lang: 
     return {"nodes": nodes, "edges": edges, "ai_status": ai_status, "ai_message": ai_message}
 
 
+
+
 def _row_evidence_dict(r) -> dict:
     d = dict(r)
     try:
@@ -477,12 +227,16 @@ async def upload_evidence(
     case_id: int,
     file: UploadFile = File(...),
     category: str = Form(default=config.DEFAULT_EVIDENCE_CATEGORY),
+    title: str = Form(default=""),
+    description: str = Form(default=""),
     user: dict = Depends(require_case_member),
 ):
     if category not in config.EVIDENCE_CATEGORIES:
         category = config.DEFAULT_EVIDENCE_CATEGORY
+    title = " ".join(title.split())[:200]
+    description = description.strip()[:2000]
 
-    original_name = file.filename or "unnamed"
+    original_name = integrity.sanitize_filename(file.filename or "unnamed")
     ext = Path(original_name).suffix.lower()
 
     if ext in config.BLOCKED_EXTENSIONS:
@@ -496,24 +250,42 @@ async def upload_evidence(
 
     hasher = hashlib.sha256()
     total_bytes = 0
+    first = True
     try:
         with open(dest_path, "wb") as out_f:
             while True:
                 chunk = await file.read(CHUNK_SIZE)
                 if not chunk:
                     break
+                if first:
+                    first = False
+                    if not integrity.content_matches_extension(ext, chunk[:16]):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The file content does not match its extension (or is an executable).",
+                        )
                 total_bytes += len(chunk)
                 if total_bytes > config.MAX_UPLOAD_BYTES:
-                    out_f.close()
-                    os.remove(dest_path)
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=f"File exceeds max upload size of {config.MAX_UPLOAD_BYTES} bytes.",
+                        detail=f"File exceeds max upload size of {config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
                     )
                 hasher.update(chunk)
                 out_f.write(chunk)
+        if total_bytes == 0:
+            raise HTTPException(status_code=400, detail="The file is empty.")
+    except Exception:
+        try:
+            os.remove(dest_path)
+        except OSError:
+            pass
+        raise
     finally:
         await file.close()
+    try:
+        os.chmod(dest_path, 0o600)
+    except OSError:
+        pass
 
     sha256_hex = hasher.hexdigest()
 
@@ -522,25 +294,28 @@ async def upload_evidence(
     else:
         exif_status, exif_data = "NOT_APPLICABLE", {}
 
-    now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
+    now = _now()
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO evidence "
             "(case_id, filename, stored_name, sha256, size_bytes, content_type, "
-            " uploaded_by, uploaded_at, exif_status, exif_json, category) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " uploaded_by, uploaded_at, exif_status, exif_json, category, title, description, last_verified_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 case_id,
                 original_name,
                 stored_name,
                 sha256_hex,
                 total_bytes,
-                file.content_type or "",
+                (file.content_type or "")[:100],
                 user["id"],
                 now,
                 exif_status,
                 json.dumps(exif_data, ensure_ascii=False),
                 category,
+                title,
+                description,
+                now,
             ),
         )
         conn.commit()
@@ -555,8 +330,30 @@ async def upload_evidence(
             "username": user["username"],
             "filename": original_name,
             "sha256_short": sha256_hex[:12],
+            "sha256": sha256_hex,
+            "size_bytes": total_bytes,
         },
     )
+
+    # Content extraction (read-only on the stored original). A parsing
+    # problem must never make the upload itself fail.
+    conversation = None
+    try:
+        with get_conn() as conn:
+            ev_row = conn.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
+            textindex.ensure_text(conn, ev_row)
+            parsed = chats.parse_conversation(str(dest_path), ext)
+            if parsed:
+                chats.store_conversation(conn, evidence_id, parsed)
+                conversation = {"format": parsed["format"], "message_count": len(parsed["messages"])}
+        if conversation:
+            audit.append_event(
+                "EVIDENCE_CONVERSATION_PARSED", actor_id=user["id"], case_id=case_id, evidence_id=evidence_id,
+                params={"filename": original_name, "count": conversation["message_count"],
+                        "format": conversation["format"]},
+            )
+    except Exception as exc:
+        print(f"[ATHAR] content extraction skipped for evidence {evidence_id}: {type(exc).__name__}")
 
     return {
         "id": evidence_id,
@@ -565,19 +362,140 @@ async def upload_evidence(
         "size_bytes": total_bytes,
         "exif_status": exif_status,
         "category": category,
+        "conversation": conversation,
     }
 
 
 @router.get("/cases/{case_id}/evidence")
 def list_evidence(case_id: int, user: dict = Depends(require_case_member)):
     with get_conn() as conn:
+        case_row = conn.execute("SELECT created_by FROM cases WHERE id = ?", (case_id,)).fetchone()
         rows = conn.execute(
-            "SELECT id, case_id, filename, sha256, size_bytes, content_type, "
-            "uploaded_by, uploaded_at, exif_status, category FROM evidence WHERE case_id = ? "
-            "ORDER BY uploaded_at DESC",
+            "SELECT e.id, e.case_id, e.filename, e.title, e.description, e.sha256, e.size_bytes, e.content_type, "
+            "e.uploaded_by, e.uploaded_at, e.updated_at, e.exif_status, e.category, e.last_verified_at, "
+            "COALESCE(NULLIF(u.full_name, ''), u.username) AS uploader_name, "
+            "(SELECT message_count FROM conversations c WHERE c.evidence_id = e.id) AS message_count "
+            "FROM evidence e JOIN users u ON u.id = e.uploaded_by "
+            "WHERE e.case_id = ? AND e.deleted_at IS NULL ORDER BY e.uploaded_at DESC",
             (case_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["can_manage"] = user["id"] == r["uploaded_by"] or user["id"] == case_row["created_by"]
+        out.append(d)
+    return out
+
+
+def _load_evidence(evidence_id: int, user: dict, require_manage: bool = False):
+    """Loads a NON-deleted evidence row for a member of its case. Missing,
+    deleted, or not-a-member all look identical (404). `require_manage`
+    additionally demands uploader/case-owner rights (403: the user can
+    already see the case, so there is nothing to hide)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM evidence WHERE id = ? AND deleted_at IS NULL", (evidence_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Evidence not found")
+        member_row = conn.execute(
+            "SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ?",
+            (row["case_id"], user["id"]),
+        ).fetchone()
+        case_row = conn.execute("SELECT * FROM cases WHERE id = ?", (row["case_id"],)).fetchone()
+        if not member_row or not case_row or case_row["status"] == "DELETED":
+            raise HTTPException(status_code=404, detail="Evidence not found")
+    if require_manage and not can_manage_evidence(user, row, case_row):
+        raise HTTPException(status_code=403, detail="NOT_ALLOWED")
+    return _row_evidence_dict(row), case_row
+
+
+def _get_evidence_or_404(evidence_id: int, user: dict) -> dict:  # kept for older call sites
+    return _load_evidence(evidence_id, user)[0]
+
+
+def _require_intact(ev: dict, user: dict) -> str:
+    """Refuses to process a file that no longer matches its recorded hash.
+    Returns the verified sha256."""
+    result, actual = integrity.check_file(ev)
+    if result != "MATCH":
+        integrity.record_check(ev, user, result)
+        raise HTTPException(status_code=409, detail="INTEGRITY_FAILURE")
+    return actual
+
+
+class UpdateEvidenceRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    category: Optional[str] = None
+
+
+@router.patch("/evidence/{evidence_id}")
+def update_evidence(evidence_id: int, body: UpdateEvidenceRequest, user: dict = Depends(get_current_user)):
+    """Edits METADATA only (title, description, category). The stored file
+    and its SHA-256 are never touched; every change is audit-logged with
+    old and new values."""
+    ev, _case = _load_evidence(evidence_id, user, require_manage=True)
+    changes, sets, vals = {}, [], []
+    if body.title is not None:
+        new = " ".join(body.title.split())
+        if new != (ev["title"] or ""):
+            changes["title"] = [ev["title"] or "", new]
+            sets.append("title = ?"); vals.append(new)
+    if body.description is not None:
+        new = body.description.strip()
+        if new != (ev["description"] or ""):
+            changes["description"] = [ev["description"] or "", new]
+            sets.append("description = ?"); vals.append(new)
+    if body.category is not None:
+        if body.category not in config.EVIDENCE_CATEGORIES:
+            raise HTTPException(status_code=400, detail="Invalid category")
+        if body.category != ev["category"]:
+            changes["category"] = [ev["category"], body.category]
+            sets.append("category = ?"); vals.append(body.category)
+    if not changes:
+        return {"id": evidence_id, "changed": []}
+
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE evidence SET {', '.join(sets)}, updated_at = ?, updated_by = ? WHERE id = ?",
+            (*vals, now, user["id"], evidence_id),
+        )
+        # titles/descriptions feed AI correlations and the summary -> refresh on demand
+        conn.execute("DELETE FROM case_summary WHERE case_id = ?", (ev["case_id"],))
+        conn.commit()
+    audit.append_event(
+        "EVIDENCE_UPDATED", actor_id=user["id"], case_id=ev["case_id"], evidence_id=evidence_id,
+        params={"username": user["username"], "filename": ev["filename"],
+                "fields": ", ".join(changes), "changes": changes},
+    )
+    return {"id": evidence_id, "changed": list(changes)}
+
+
+@router.delete("/evidence/{evidence_id}")
+def delete_evidence(evidence_id: int, user: dict = Depends(get_current_user)):
+    """Soft delete per the retention policy: the item disappears from every
+    list, map, search and report at once, derived data (text, parsed chat,
+    AI results) is removed, and the stored file + hash are kept for
+    ATHAR_EVIDENCE_RETENTION_DAYS before being purged. The audit log is never
+    altered."""
+    ev, _case = _load_evidence(evidence_id, user, require_manage=True)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE evidence SET deleted_at = ?, deleted_by = ? WHERE id = ?", (now, user["id"], evidence_id)
+        )
+        integrity.delete_derived_data(conn, evidence_id, ev["case_id"])
+        conn.commit()
+    purge_after = integrity.purge_after(now)
+    audit.append_event(
+        "EVIDENCE_DELETED", actor_id=user["id"], case_id=ev["case_id"], evidence_id=evidence_id,
+        params={"username": user["username"], "filename": ev["filename"],
+                "sha256_short": ev["sha256"][:12], "sha256": ev["sha256"], "purge_after": purge_after},
+    )
+    integrity.purge_expired()
+    return {"id": evidence_id, "status": "DELETED", "purge_after": purge_after}
 
 
 class SetCategoryRequest(BaseModel):
@@ -588,52 +506,27 @@ class SetCategoryRequest(BaseModel):
 def set_evidence_category(
     evidence_id: int, body: SetCategoryRequest, user: dict = Depends(get_current_user)
 ):
-    if body.category not in config.EVIDENCE_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Invalid category")
-
-    ev = _get_evidence_or_404(evidence_id, user)
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE evidence SET category = ? WHERE id = ?", (body.category, evidence_id)
-        )
-        conn.commit()
-
-    audit.append_event(
-        "EVIDENCE_CATEGORY_CHANGED",
-        actor_id=user["id"],
-        case_id=ev["case_id"],
-        evidence_id=evidence_id,
-        params={
-            "username": user["username"],
-            "filename": ev["filename"],
-            "category": body.category,
-        },
-    )
-    return {"id": evidence_id, "category": body.category}
-
-
-def _get_evidence_or_404(evidence_id: int, user: dict) -> dict:
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Evidence not found")
-        member_row = conn.execute(
-            "SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ?",
-            (row["case_id"], user["id"]),
-        ).fetchone()
-        if not member_row:
-            raise HTTPException(status_code=404, detail="Evidence not found")
-    return _row_evidence_dict(row)
+    return update_evidence(evidence_id, UpdateEvidenceRequest(category=body.category), user)
 
 
 @router.get("/evidence/{evidence_id}")
 def get_evidence(evidence_id: int, user: dict = Depends(get_current_user), lang: str = Query(default="en")):
-    ev = _get_evidence_or_404(evidence_id, user)
+    ev, case_row = _load_evidence(evidence_id, user)
+    ev["can_manage"] = can_manage_evidence(user, ev, case_row)
 
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM audit_log WHERE evidence_id = ? ORDER BY seq ASC", (evidence_id,)
         ).fetchall()
+        conv = chats.get_meta(conn, evidence_id)
+        uploader = conn.execute(
+            "SELECT COALESCE(NULLIF(full_name, ''), username) AS n FROM users WHERE id = ?", (ev["uploaded_by"],)
+        ).fetchone()
+    ev["uploader_name"] = uploader["n"] if uploader else ""
+    ev["conversation"] = (
+        {k: conv[k] for k in ("format", "message_count", "first_ts", "last_ts")} if conv else None
+    )
+    ev.pop("stored_name", None)
     custody_log = []
     for r in rows:
         try:
@@ -685,12 +578,29 @@ def get_evidence(evidence_id: int, user: dict = Depends(get_current_user), lang:
     return ev
 
 
+@router.post("/evidence/{evidence_id}/verify-integrity")
+def verify_integrity(evidence_id: int, user: dict = Depends(get_current_user)):
+    """Re-hashes the stored file and compares with the SHA-256 recorded at upload."""
+    ev, _case = _load_evidence(evidence_id, user)
+    result, actual = integrity.check_file(ev)
+    integrity.record_check(ev, user, result)
+    return {
+        "result": result,
+        "intact": result == "MATCH",
+        "expected_sha256": ev["sha256"],
+        "actual_sha256": actual,
+        "checked_at": _now(),
+    }
+
+
 @router.get("/evidence/{evidence_id}/download")
 def download_evidence(evidence_id: int, user: dict = Depends(get_current_user)):
-    ev = _get_evidence_or_404(evidence_id, user)
+    ev, _case = _load_evidence(evidence_id, user)
     file_path = config.EVIDENCE_DIR / ev["stored_name"]
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Stored file missing on disk")
+    # Never hand out a file that no longer matches its recorded hash.
+    _require_intact(ev, user)
 
     audit.append_event(
         "EVIDENCE_DOWNLOADED",
@@ -702,27 +612,24 @@ def download_evidence(evidence_id: int, user: dict = Depends(get_current_user)):
     return FileResponse(
         path=str(file_path),
         filename=ev["filename"],
-        media_type=ev["content_type"] or "application/octet-stream",
+        media_type="application/octet-stream",
+        headers={"X-Content-Type-Options": "nosniff", "X-Evidence-SHA256": ev["sha256"]},
     )
 
 
 @router.post("/evidence/{evidence_id}/analyze")
 def analyze_evidence(evidence_id: int, user: dict = Depends(get_current_user), lang: str = Query(default="en")):
-    ev = _get_evidence_or_404(evidence_id, user)
+    ev, _case = _load_evidence(evidence_id, user)
+    hash_before = _require_intact(ev, user)
 
     with get_conn() as conn:
         other_rows = conn.execute(
-            "SELECT filename, stored_name, sha256, size_bytes, uploaded_at, exif_json FROM evidence "
-            "WHERE case_id = ? AND id != ?",
+            "SELECT filename, title, description, stored_name, sha256, size_bytes, uploaded_at, exif_json FROM evidence "
+            "WHERE case_id = ? AND id != ? AND deleted_at IS NULL",
             (ev["case_id"], evidence_id),
         ).fetchall()
 
     def with_content_excerpt(d: dict) -> dict:
-        # Reads the item's actual text content (for .txt/.md/.csv/.json/
-        # .pdf/.docx) so a report that SAYS something (e.g. "this photo
-        # was taken on the victim's phone") can actually be used by the
-        # model, and describes images visually -- not just filename/hash/
-        # timestamp/EXIF metadata.
         stored_name = d.pop("stored_name", None)
         if stored_name:
             file_path = config.EVIDENCE_DIR / stored_name
@@ -744,17 +651,14 @@ def analyze_evidence(evidence_id: int, user: dict = Depends(get_current_user), l
             d["exif"] = json.loads(d.pop("exif_json"))
         except Exception:
             d["exif"] = {}
-        # uploaded_at is an administrative artifact (when a file was
-        # added to THIS system), not forensic evidence -- testing showed
-        # the model would use it as a timing correlation signal even
-        # when explicitly told not to, whenever it was present in the
-        # data. Not sending it at all is the reliable fix.
-        d.pop("uploaded_at", None)
+        d.pop("uploaded_at", None)  # administrative artefact, not forensic evidence
         related.append(with_content_excerpt(d))
 
     target = with_content_excerpt(
         {
             "filename": ev["filename"],
+            "title": ev["title"],
+            "description": ev["description"],
             "stored_name": ev["stored_name"],
             "sha256": ev["sha256"],
             "exif": ev["exif"],
@@ -763,8 +667,14 @@ def analyze_evidence(evidence_id: int, user: dict = Depends(get_current_user), l
 
     result = analysis.analyze_evidence(target, related, lang=lang)
 
+    # Second hash after processing: proves the original was not altered.
+    hash_after = integrity.file_sha256(config.EVIDENCE_DIR / ev["stored_name"])
+    if hash_after != hash_before:
+        integrity.record_check(ev, user, "MISMATCH")
+        raise HTTPException(status_code=409, detail="INTEGRITY_FAILURE")
+
     if result.get("status") == "SUCCESS":
-        now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
+        now = _now()
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO evidence_analysis (evidence_id, result_json, lang, analyzed_at) "
@@ -780,7 +690,81 @@ def analyze_evidence(evidence_id: int, user: dict = Depends(get_current_user), l
         actor_id=user["id"],
         case_id=ev["case_id"],
         evidence_id=evidence_id,
-        params={"username": user["username"], "filename": ev["filename"]},
+        params={"username": user["username"], "filename": ev["filename"],
+                "sha256_before": hash_before, "sha256_after": hash_after, "ai_status": result.get("status")},
+    )
+    return result
+
+
+# --- Conversations -----------------------------------------------------------------
+
+def _conversation_or_404(evidence_id: int, user: dict):
+    ev, case_row = _load_evidence(evidence_id, user)
+    with get_conn() as conn:
+        meta = chats.get_meta(conn, evidence_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="NOT_A_CONVERSATION")
+    return ev, case_row, meta
+
+
+@router.get("/evidence/{evidence_id}/conversation")
+def get_conversation(
+    evidence_id: int,
+    q: str = Query(default="", max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    """Parsed conversation: participants, date range, statistics, messages
+    (or only the messages matching `q`), plus deterministic links to other
+    evidence in the same case. Each message carries `source_ref` pointing
+    to its exact location in the original file."""
+    ev, _case, meta = _conversation_or_404(evidence_id, user)
+    with get_conn() as conn:
+        stats = chats.compute_stats(conn, evidence_id)
+        if q.strip():
+            msgs = chats.search_messages(conn, evidence_id, q)
+            matched = True
+        else:
+            msgs = chats.get_messages(conn, evidence_id, offset, limit)
+            matched = False
+        links = chats.link_to_evidence(conn, evidence_id, ev["case_id"])
+    return {
+        "meta": meta, "stats": stats, "messages": msgs, "query": q.strip(), "is_search": matched,
+        "offset": offset, "limit": limit, "links": links,
+        "notes": {
+            "untrusted": True,
+            "time_zone_unknown": True,
+            "date_order_assumed": meta["format"] in ("TEXT_TIMESTAMPED", "PDF_TEXT", "DOCX_TEXT"),
+        },
+    }
+
+
+@router.post("/evidence/{evidence_id}/conversation/summary")
+def summarize_conversation(evidence_id: int, user: dict = Depends(get_current_user), lang: str = Query(default="en")):
+    ev, _case, meta = _conversation_or_404(evidence_id, user)
+    _require_intact(ev, user)
+    with get_conn() as conn:
+        total = meta["message_count"]
+        rows = [dict(r) for r in conn.execute(
+            "SELECT idx, sender, ts, body FROM chat_messages WHERE evidence_id = ? ORDER BY idx", (evidence_id,))]
+    if total > 400:  # head + tail + evenly spaced middle
+        step = max(1, (total - 300) // 100)
+        keep = set(range(0, 150)) | set(range(total - 150, total)) | set(range(150, total - 150, step))
+        sample = [rows[i] for i in sorted(keep) if i < len(rows)]
+    else:
+        sample = rows
+    result = analysis.summarize_conversation(meta, sample, total, lang=lang)
+    if result.get("status") == "SUCCESS":
+        result["lang"] = lang
+        result["generated_at"] = _now()
+        with get_conn() as conn:
+            conn.execute("UPDATE conversations SET summary_json = ? WHERE evidence_id = ?",
+                         (json.dumps(result, ensure_ascii=False), evidence_id))
+            conn.commit()
+    audit.append_event(
+        "CONVERSATION_SUMMARY_GENERATED", actor_id=user["id"], case_id=ev["case_id"], evidence_id=evidence_id,
+        params={"username": user["username"], "filename": ev["filename"], "ai_status": result.get("status")},
     )
     return result
 
@@ -797,7 +781,7 @@ def check_evidence_authenticity(
     reliable deepfake-detection tool -- see assess_image_authenticity's
     docstring -- and the frontend must present it as a rough hint only.
     """
-    ev = _get_evidence_or_404(evidence_id, user)
+    ev, _case = _load_evidence(evidence_id, user)
     ext = Path(ev["filename"]).suffix.lower()
 
     if ext not in IMAGE_EXTENSIONS:
@@ -805,6 +789,7 @@ def check_evidence_authenticity(
 
     exif_indicators = analysis.check_exif_authenticity_indicators(ev.get("exif") or {})
 
+    _require_intact(ev, user)
     file_path = config.EVIDENCE_DIR / ev["stored_name"]
     if not file_path.exists():
         ai_result = {

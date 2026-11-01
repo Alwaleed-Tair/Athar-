@@ -45,12 +45,13 @@ def verify_password(plain_password: str, stored_hash: str) -> bool:
     return hmac.compare_digest(derived, expected)
 
 
-def create_access_token(user_id: int, username: str, role: str) -> str:
+def create_access_token(user_id: int, username: str, role: str, token_version: int = 0) -> str:
     now = int(time.time())
     payload = {
         "sub": str(user_id),
         "username": username,
         "role": role,
+        "tv": token_version,  # bumped on password change/reset -> old tokens stop working
         "iat": now,
         "exp": now + config.JWT_EXPIRE_MINUTES * 60,
     }
@@ -62,3 +63,8 @@ def decode_access_token(token: str) -> Optional[dict]:
         return jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
     except jwt.PyJWTError:
         return None
+
+
+def hash_token(raw_token: str) -> str:
+    """SHA-256 of a one-time e-mail token. Only this is stored."""
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
