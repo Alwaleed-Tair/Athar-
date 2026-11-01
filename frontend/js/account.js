@@ -55,7 +55,7 @@ const Account = (() => {
         Notifications.stop();
         Api.setToken(null);
         State.set({ user: null, route: { name: 'login' } });
-        UI.toast(I18n.t('accountDeleted'));
+        try { sessionStorage.setItem('athar_notice', 'accountDeleted'); } catch (e) { /* ignore */ }
       } catch (err) {
         msg.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(err))}</div>`;
         btn.disabled = false;

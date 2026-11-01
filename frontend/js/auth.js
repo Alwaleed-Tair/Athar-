@@ -228,6 +228,13 @@ const Auth = (() => {
     card.querySelector('#tab-register-btn').onclick = () => switchTo('register');
     card.querySelector('#switch-mode').onclick = () => switchTo(isRegister ? 'login' : 'register');
 
+    try {
+      const notice = sessionStorage.getItem('athar_notice');
+      if (notice) {
+        sessionStorage.removeItem('athar_notice');
+        card.querySelector('#login-error').innerHTML = `<div class="alert alert-success">${UI.icon('check', '', 18)} <span>${I18n.t(notice)}</span></div>`;
+      }
+    } catch (e) { /* storage unavailable */ }
     const pwdInput = card.querySelector('#investigator-password');
     if (isRegister) wirePasswordChecklist(card, pwdInput);
     const pwToggle = card.querySelector('#pw-toggle');

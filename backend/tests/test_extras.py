@@ -170,3 +170,18 @@ def test_semantic_search_disabled_then_enabled_and_scoped(client, make_user, mon
     assert sum(len(c) for c in calls[n:]) == 1                          # vectors cached: only the query is embedded
     monkeypatch.setattr(embeddings, "_embed", lambda t: (_ for _ in ()).throw(embeddings.EmbeddingError("x")))
     assert client.get("/api/search/semantic", headers=a["headers"], params={"q": "anything new"}).json()["status"] == "FAILED"
+
+
+def test_audit_messages_are_fully_localized(client, make_user):
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "c.txt", "[31/12/23, 10:15:30 PM] A: x\n[31/12/23, 10:16:30 PM] B: y\n".encode()).json()
+    client.get(f"/api/cases/{cid}/verify", headers=a["headers"])
+    client.delete(f"/api/evidence/{ev['id']}", headers=a["headers"])
+    for lang, banned in (("ar", ["True", "False", "TEXT_TIMESTAMPED", "TRANSFERRED"]), ("en", ["True", "False", "TEXT_TIMESTAMPED"])):
+        rows = client.get(f"/api/cases/{cid}/audit?lang={lang}", headers=a["headers"]).json()
+        text = " | ".join(r["message"] for r in rows)
+        for b in banned:
+            assert b not in text, (lang, b, text)
+        assert not any(c.isdigit() and text[i + 1:i + 4] == "-12" for i, c in enumerate(text) if i + 4 < len(text))  # no ISO date left
+    ar = " ".join(r["message"] for r in client.get(f"/api/cases/{cid}/audit?lang=ar", headers=a["headers"]).json())
+    assert "عدد الرسائل: 2" in ar and "سليمة" in ar and "ديسمبر" in ar or "يناير" in ar or "فبراير" in ar or "مارس" in ar

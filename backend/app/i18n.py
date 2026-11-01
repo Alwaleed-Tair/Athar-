@@ -98,8 +98,8 @@ TEMPLATES = {
         "ar": "أعاد {username} تعيين كلمة المرور عبر رابط أُرسل إلى بريده",
     },
     "ACCOUNT_DELETED": {
-        "en": "{username} deleted their account (case handling: {case_action})",
-        "ar": "حذف {username} حسابه (التعامل مع القضية: {case_action})",
+        "en": "{username} deleted their account (cases: {case_action})",
+        "ar": "حذف {username} حسابه (القضايا: {case_action})",
     },
     "EVIDENCE_OCR_RUN": {
         "en": "{username} ran text extraction (OCR, {method}) on \"{filename}\"",
@@ -122,16 +122,16 @@ TEMPLATES = {
         "ar": "تحقق {username} من سلامة ملف الدليل \"{filename}\": {result}",
     },
     "EVIDENCE_CONVERSATION_PARSED": {
-        "en": "Conversation content of \"{filename}\" was extracted ({count} messages, format {format})",
-        "ar": "استُخرج محتوى المحادثة من \"{filename}\" ({count} رسالة، الصيغة {format})",
+        "en": "Conversation content of \"{filename}\" was extracted (messages: {count}; format: {format})",
+        "ar": "استُخرج محتوى المحادثة من \"{filename}\" (عدد الرسائل: {count}؛ الصيغة: {format})",
     },
     "CONVERSATION_SUMMARY_GENERATED": {
         "en": "{username} generated a conversation summary for \"{filename}\"",
         "ar": "ولّد {username} ملخص المحادثة للدليل \"{filename}\"",
     },
     "REPORT_GENERATED": {
-        "en": "{username} exported the PDF report for case \"{case_name}\" ({evidence_count} evidence items, chain intact: {intact})",
-        "ar": "صدّر {username} التقرير القانوني (PDF) للقضية \"{case_name}\" ({evidence_count} دليل، السلسلة سليمة: {intact})",
+        "en": "{username} exported the PDF report for case \"{case_name}\" (evidence items: {evidence_count}; chain: {intact})",
+        "ar": "صدّر {username} التقرير القانوني (PDF) للقضية \"{case_name}\" (عدد الأدلة: {evidence_count}؛ حالة السلسلة: {intact})",
     },
     "CASE_SEARCHED": {
         "en": "{username} searched case \"{case_name}\"",
@@ -142,8 +142,8 @@ TEMPLATES = {
         "ar": "أزال {actor_username} المستخدم {member_username} من هذه القضية",
     },
     "CHAIN_VERIFIED": {
-        "en": "{username} ran a chain-of-custody verification (intact: {intact})",
-        "ar": "شغّل {username} تحققاً من سلسلة العهدة (سليمة: {intact})",
+        "en": "{username} ran a chain-of-custody verification: {intact}",
+        "ar": "شغّل {username} تحققاً من سلسلة العهدة: {intact}",
     },
 }
 
@@ -161,6 +161,44 @@ CATEGORY_LABELS = {
 }
 
 
+INTACT_LABELS = {
+    True: {"en": "intact", "ar": "سليمة"},
+    False: {"en": "TAMPERING DETECTED", "ar": "رُصد تلاعب"},
+}
+FORMAT_LABELS = {
+    "TEXT_TIMESTAMPED": {"en": "timestamped text export", "ar": "تصدير نصي بالأوقات"},
+    "TEXT_SPEAKERS": {"en": "speaker transcript", "ar": "نص محادثة (المتحدث: الرسالة)"},
+    "JSON": {"en": "JSON export", "ar": "تصدير JSON"},
+    "CSV": {"en": "CSV", "ar": "CSV"},
+    "PDF_TEXT": {"en": "PDF text", "ar": "نص PDF"},
+    "DOCX_TEXT": {"en": "Word text", "ar": "نص Word"},
+    "OCR_TEXT": {"en": "text read from an image (OCR)", "ar": "نص مقروء من صورة (OCR)"},
+}
+CASE_ACTION_LABELS = {
+    "TRANSFERRED": {"en": "ownership transferred to another member", "ar": "نُقلت الملكية إلى عضو آخر"},
+    "ARCHIVED": {"en": "archived", "ar": "أُرشفت"},
+    "NONE": {"en": "none", "ar": "لا يوجد"},
+}
+OCR_METHOD_LABELS = {
+    "TESSERACT": {"en": "Tesseract", "ar": "Tesseract"},
+    "AI_VISION": {"en": "AI vision", "ar": "رؤية الذكاء الاصطناعي"},
+    "NONE": {"en": "none", "ar": "لا يوجد"},
+}
+_MONTHS = {
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "ar": ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
+}
+
+
+def _pretty_date(value: str, lang: str) -> str:
+    """'2026-12-01' -> '1 Dec 2026' / '1 ديسمبر 2026' (anything else is returned as is)."""
+    try:
+        y, m, d = (int(x) for x in str(value)[:10].split("-"))
+        return f"{d} {_MONTHS[lang][m - 1]} {y}"
+    except (ValueError, IndexError):
+        return str(value)
+
+
 RESULT_LABELS = {
     "MATCH": {"en": "hash matches the value recorded at upload", "ar": "البصمة مطابقة للقيمة المسجلة عند الرفع"},
     "MISMATCH": {"en": "HASH MISMATCH - file differs from the recorded original", "ar": "عدم تطابق - الملف يختلف عن الأصل المسجل"},
@@ -176,6 +214,17 @@ def build_message(action: str, params: dict, lang: Optional[str]) -> str:
     template = entry.get(lang, entry.get(config.DEFAULT_LANG, action))
     if "category" in params and params["category"] in CATEGORY_LABELS:
         params = {**params, "category": CATEGORY_LABELS[params["category"]].get(lang, params["category"])}
+    params = dict(params)
+    if "intact" in params:
+        params["intact"] = INTACT_LABELS[bool(params["intact"])][lang]
+    if params.get("format") in FORMAT_LABELS:
+        params["format"] = FORMAT_LABELS[params["format"]][lang]
+    if params.get("case_action") in CASE_ACTION_LABELS:
+        params["case_action"] = CASE_ACTION_LABELS[params["case_action"]][lang]
+    if params.get("method") in OCR_METHOD_LABELS:
+        params["method"] = OCR_METHOD_LABELS[params["method"]][lang]
+    if "purge_after" in params:
+        params["purge_after"] = _pretty_date(params["purge_after"], lang)
     if "result" in params and params["result"] in RESULT_LABELS:
         params = {**params, "result": RESULT_LABELS[params["result"]].get(lang, params["result"])}
     try:

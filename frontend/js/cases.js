@@ -744,7 +744,7 @@ const Cases = (() => {
 
   function renderVerifyResult(el, result) {
     if (result.intact) {
-      el.innerHTML = `<span class="ui-badge badge-active">${UI.icon('check', '', 13)} ${I18n.t('intact')}</span> <span class="text-muted text-sm">${result.records_checked} ${I18n.t('recordsChecked')}</span>`;
+      el.innerHTML = `<span class="ui-badge badge-active">${UI.icon('check', '', 13)} ${I18n.t('intact')}</span> <span class="text-muted text-sm">${I18n.t('recordsCheckedCount', { count: result.records_checked })}</span>`;
     } else {
       el.innerHTML = `<span class="ui-badge badge-critical">${UI.icon('alertTriangle', '', 13)} ${I18n.t('broken')}</span> <span class="text-muted text-sm">${I18n.t('firstBrokenAt', { seq: result.first_broken_seq })}</span>`;
     }

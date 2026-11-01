@@ -59,6 +59,7 @@ const I18n = (() => {
       intact: 'Intact',
       broken: 'Tampering detected',
       recordsChecked: 'records checked',
+      recordsCheckedCount: 'Records checked: {count}',
       firstBrokenAt: 'First broken record: #{seq}',
       uploadEvidence: 'Upload evidence',
       dropHint: 'Click to choose a file, or drag it here',
@@ -262,6 +263,7 @@ const I18n = (() => {
       intact: 'سليمة',
       broken: 'تم اكتشاف تلاعب',
       recordsChecked: 'سجل تم فحصه',
+      recordsCheckedCount: 'عدد السجلات المفحوصة: {count}',
       firstBrokenAt: 'أول سجل مكسور: #{seq}',
       uploadEvidence: 'رفع دليل',
       dropHint: 'اضغط لاختيار ملف، أو اسحبه هنا',
@@ -377,7 +379,7 @@ const I18n = (() => {
       classificationSelect: 'درجة السرية',
       statusSelect: 'الحالة (Status)',
       initialDescription: 'الوصف الأولي المختصر',
-      caseFilesCount: 'الملفات: {count} أدلة',
+      caseFilesCount: 'عدد الأدلة: {count}',
 
       // الحسابات والمستخدمون
       fullName: 'الاسم الكامل',
@@ -406,7 +408,7 @@ const I18n = (() => {
 
       // نافذة تنبيه الترابط
       newCorrelationTitle: 'ترابط جديد مع قضية أخرى',
-      newCorrelationSub: 'تم اكتشاف {count} ترابط جديد بين أدلتك وقضية أخرى.',
+      newCorrelationSub: 'اكتُشفت ترابطات جديدة بين أدلتك وقضية أخرى (العدد: {count}).',
       andMore: 'و{count} غيرها — اطّلع على كل الإشعارات.',
       viewAllNotifications: 'كل الإشعارات',
       openCase: 'فتح القضية',
