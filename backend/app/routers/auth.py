@@ -1,5 +1,6 @@
 import re
 import secrets
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -226,11 +227,15 @@ def register(body: RegisterRequest, request: Request):
             "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE", (email, email)
         ).fetchone():
             raise HTTPException(status_code=400, detail="An account with this email already exists.")
-        cur = conn.execute(
-            "INSERT INTO users (username, email, full_name, password_hash, role, created_at, email_verified, handle) "
-            "VALUES (?, ?, ?, ?, 'INVESTIGATOR', ?, 0, ?)",
-            (email, email, full_name, security.hash_password(body.password), now, _unique_handle(conn, email)),
-        )
+        try:
+            cur = conn.execute(
+                "INSERT INTO users (username, email, full_name, password_hash, role, created_at, email_verified, handle) "
+                "VALUES (?, ?, ?, ?, 'INVESTIGATOR', ?, 0, ?)",
+                (email, email, full_name, security.hash_password(body.password), now, _unique_handle(conn, email)),
+            )
+        except sqlite3.IntegrityError:  # a parallel request registered the same e-mail first
+            conn.rollback()
+            raise HTTPException(status_code=400, detail="An account with this email already exists.")
         conn.commit()
         row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
 
@@ -332,9 +337,13 @@ def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_
                 "SELECT 1 FROM users WHERE handle = ? COLLATE NOCASE AND id != ?", (handle, user["id"])
             ).fetchone():
                 raise HTTPException(status_code=400, detail="HANDLE_TAKEN")
-        conn.execute("UPDATE users SET full_name = ?, handle = ?, updated_at = ? WHERE id = ?",
-                     (full_name, handle, _now(), user["id"]))
-        conn.commit()
+        try:
+            conn.execute("UPDATE users SET full_name = ?, handle = ?, updated_at = ? WHERE id = ?",
+                         (full_name, handle, _now(), user["id"]))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail="HANDLE_TAKEN")
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
     audit.append_event(
         "PROFILE_UPDATED", actor_id=user["id"],
@@ -521,12 +530,16 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
     with get_conn() as conn:
         if conn.execute("SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username,)).fetchone():
             raise HTTPException(status_code=400, detail="Username already exists.")
-        cur = conn.execute(
-            "INSERT INTO users (username, email, full_name, password_hash, role, created_at, email_verified, handle) "
-            "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-            (username, email, full_name, security.hash_password(body.password), body.role, _now(),
-             _unique_handle(conn, email or username)),
-        )
+        try:
+            cur = conn.execute(
+                "INSERT INTO users (username, email, full_name, password_hash, role, created_at, email_verified, handle) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+                (username, email, full_name, security.hash_password(body.password), body.role, _now(),
+                 _unique_handle(conn, email or username)),
+            )
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail="Username already exists.")
         conn.commit()
         new_id = cur.lastrowid
 

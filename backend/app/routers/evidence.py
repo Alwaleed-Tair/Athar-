@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -222,6 +223,90 @@ def _row_evidence_dict(r) -> dict:
     return d
 
 
+def _finalize_upload(case_id, user, dest_path, ext, original_name, stored_name, total_bytes, content_type,
+                     category, title, description, sha256_hex) -> dict:
+    """EXIF, DB insert, audit, text extraction and chat parsing. CPU/IO heavy
+    (PDF parsing can take seconds), so it runs in a worker thread, never on the
+    server's event loop."""
+    if ext in IMAGE_EXTENSIONS:
+        exif_status, exif_data = analysis.extract_exif(str(dest_path))
+    else:
+        exif_status, exif_data = "NOT_APPLICABLE", {}
+
+    now = _now()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO evidence "
+            "(case_id, filename, stored_name, sha256, size_bytes, content_type, "
+            " uploaded_by, uploaded_at, exif_status, exif_json, category, title, description, last_verified_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                case_id,
+                original_name,
+                stored_name,
+                sha256_hex,
+                total_bytes,
+                (content_type or "")[:100],
+                user["id"],
+                now,
+                exif_status,
+                json.dumps(exif_data, ensure_ascii=False),
+                category,
+                title,
+                description,
+                now,
+            ),
+        )
+        conn.commit()
+        evidence_id = cur.lastrowid
+
+    audit.append_event(
+        "EVIDENCE_UPLOADED",
+        actor_id=user["id"],
+        case_id=case_id,
+        evidence_id=evidence_id,
+        params={
+            "username": user["username"],
+            "filename": original_name,
+            "sha256_short": sha256_hex[:12],
+            "sha256": sha256_hex,
+            "size_bytes": total_bytes,
+        },
+    )
+
+    # Content extraction (read-only on the stored original). A parsing
+    # problem must never make the upload itself fail.
+    conversation = None
+    try:
+        with get_conn() as conn:
+            ev_row = conn.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
+            textindex.ensure_text(conn, ev_row)
+            parsed = chats.parse_conversation(str(dest_path), ext)
+            if parsed:
+                chats.store_conversation(conn, evidence_id, parsed)
+                conversation = {"format": parsed["format"], "message_count": len(parsed["messages"])}
+        if conversation:
+            audit.append_event(
+                "EVIDENCE_CONVERSATION_PARSED", actor_id=user["id"], case_id=case_id, evidence_id=evidence_id,
+                params={"filename": original_name, "count": conversation["message_count"],
+                        "format": conversation["format"]},
+            )
+    except Exception as exc:
+        print(f"[ATHAR] content extraction skipped for evidence {evidence_id}: {type(exc).__name__}")
+
+    return {
+        "id": evidence_id,
+        "filename": original_name,
+        "sha256": sha256_hex,
+        "size_bytes": total_bytes,
+        "exif_status": exif_status,
+        "category": category,
+        "conversation": conversation,
+    }
+
+
+
+
 @router.post("/cases/{case_id}/evidence", status_code=status.HTTP_201_CREATED)
 async def upload_evidence(
     case_id: int,
@@ -288,82 +373,10 @@ async def upload_evidence(
         pass
 
     sha256_hex = hasher.hexdigest()
-
-    if ext in IMAGE_EXTENSIONS:
-        exif_status, exif_data = analysis.extract_exif(str(dest_path))
-    else:
-        exif_status, exif_data = "NOT_APPLICABLE", {}
-
-    now = _now()
-    with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO evidence "
-            "(case_id, filename, stored_name, sha256, size_bytes, content_type, "
-            " uploaded_by, uploaded_at, exif_status, exif_json, category, title, description, last_verified_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                case_id,
-                original_name,
-                stored_name,
-                sha256_hex,
-                total_bytes,
-                (file.content_type or "")[:100],
-                user["id"],
-                now,
-                exif_status,
-                json.dumps(exif_data, ensure_ascii=False),
-                category,
-                title,
-                description,
-                now,
-            ),
-        )
-        conn.commit()
-        evidence_id = cur.lastrowid
-
-    audit.append_event(
-        "EVIDENCE_UPLOADED",
-        actor_id=user["id"],
-        case_id=case_id,
-        evidence_id=evidence_id,
-        params={
-            "username": user["username"],
-            "filename": original_name,
-            "sha256_short": sha256_hex[:12],
-            "sha256": sha256_hex,
-            "size_bytes": total_bytes,
-        },
+    return await run_in_threadpool(
+        _finalize_upload, case_id, user, dest_path, ext, original_name, stored_name, total_bytes,
+        file.content_type, category, title, description, sha256_hex,
     )
-
-    # Content extraction (read-only on the stored original). A parsing
-    # problem must never make the upload itself fail.
-    conversation = None
-    try:
-        with get_conn() as conn:
-            ev_row = conn.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
-            textindex.ensure_text(conn, ev_row)
-            parsed = chats.parse_conversation(str(dest_path), ext)
-            if parsed:
-                chats.store_conversation(conn, evidence_id, parsed)
-                conversation = {"format": parsed["format"], "message_count": len(parsed["messages"])}
-        if conversation:
-            audit.append_event(
-                "EVIDENCE_CONVERSATION_PARSED", actor_id=user["id"], case_id=case_id, evidence_id=evidence_id,
-                params={"filename": original_name, "count": conversation["message_count"],
-                        "format": conversation["format"]},
-            )
-    except Exception as exc:
-        print(f"[ATHAR] content extraction skipped for evidence {evidence_id}: {type(exc).__name__}")
-
-    return {
-        "id": evidence_id,
-        "filename": original_name,
-        "sha256": sha256_hex,
-        "size_bytes": total_bytes,
-        "exif_status": exif_status,
-        "category": category,
-        "conversation": conversation,
-    }
 
 
 @router.get("/cases/{case_id}/evidence")

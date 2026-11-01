@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -174,11 +175,15 @@ def add_member(case_id: int, body: AddMemberRequest, user: dict = Depends(requir
         ).fetchone()
         if already:
             raise HTTPException(status_code=400, detail="ALREADY_MEMBER")
-        conn.execute(
-            "INSERT INTO case_members (case_id, user_id, added_at) VALUES (?, ?, ?)",
-            (case_id, member_row["id"], now),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                "INSERT INTO case_members (case_id, user_id, added_at) VALUES (?, ?, ?)",
+                (case_id, member_row["id"], now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail="ALREADY_MEMBER")
 
     audit.append_event(
         "MEMBER_ADDED",
