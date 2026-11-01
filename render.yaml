@@ -1,0 +1,37 @@
+# Optional Render Blueprint. You can also enter the same values in the dashboard.
+# The persistent disk requires a paid instance type (the free tier has an ephemeral disk).
+services:
+  - type: web
+    name: athar
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    disk:
+      name: athar-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ATHAR_STORAGE_DIR
+        value: /var/data
+      - key: ATHAR_JWT_SECRET
+        generateValue: true
+      - key: ATHAR_ADMIN_PASSWORD
+        sync: false
+      - key: ATHAR_PUBLIC_URL
+        sync: false
+      - key: ATHAR_AI_KEY
+        sync: false
+      - key: ATHAR_SMTP_HOST
+        sync: false
+      - key: ATHAR_SMTP_USER
+        sync: false
+      - key: ATHAR_SMTP_PASSWORD
+        sync: false
+      - key: ATHAR_SMTP_FROM
+        sync: false
+      - key: ATHAR_CONTACT_TO
+        sync: false
