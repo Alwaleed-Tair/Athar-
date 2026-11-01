@@ -507,7 +507,7 @@ const Auth = (() => {
         card.querySelector('#rs-form').remove();
         msg.innerHTML = `<div class="alert alert-success">${UI.icon('shieldCheck', '', 18)} <span>${I18n.t('resetDone')}</span></div>`;
       } catch (err) {
-        fail(UI.errorMessage(err));
+        fail(err.code === 'TOKEN_EXPIRED' ? I18n.t('resetTokenExpired') : err.code === 'TOKEN_INVALID' ? I18n.t('resetTokenInvalid') : UI.errorMessage(err));
         btn.disabled = false;
       }
     });

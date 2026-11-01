@@ -26,18 +26,36 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-# One shared connection is fine for a single-process prototype server;
-# sqlite3 handles internal locking, and AUDIT_LOCK guards the hash-chain
-# read-then-append sequence specifically.
-_CONN = _connect()
+# One connection PER THREAD. A single connection shared by concurrent request
+# threads interleaves cursors and transactions, which produced random 500s and
+# even wrong 401/403 answers under parallel requests. SQLite in WAL mode lets
+# these connections read concurrently; writes wait up to busy_timeout.
+_local = threading.local()
+_connect()  # create the storage directories / database file on import
+
+
+def _thread_conn() -> sqlite3.Connection:
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _connect()
+        _local.conn = conn
+    return conn
 
 
 @contextmanager
 def get_conn():
+    conn = _thread_conn()
     try:
-        yield _CONN
-    finally:
-        pass
+        yield conn
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    else:
+        # Safety net: never leave a write transaction open on a pooled
+        # thread connection (it would hold the write lock for other requests).
+        if conn.in_transaction:
+            conn.commit()
 
 
 SCHEMA = """

@@ -206,11 +206,17 @@ RESULT_LABELS = {
 }
 
 
+def _fallback(action: str, lang: str) -> str:
+    if lang == "ar":
+        return f"سجل من نوع «{action}» (تفاصيله غير متاحة أو تالفة)"
+    return f'Record of type "{action}" (details unavailable or corrupted)'
+
+
 def build_message(action: str, params: dict, lang: Optional[str]) -> str:
     lang = lang if lang in config.SUPPORTED_LANGS else config.DEFAULT_LANG
     entry = TEMPLATES.get(action)
     if entry is None:
-        return action
+        return _fallback(action, lang)
     template = entry.get(lang, entry.get(config.DEFAULT_LANG, action))
     if "category" in params and params["category"] in CATEGORY_LABELS:
         params = {**params, "category": CATEGORY_LABELS[params["category"]].get(lang, params["category"])}
@@ -230,6 +236,6 @@ def build_message(action: str, params: dict, lang: Optional[str]) -> str:
     try:
         return template.format(**params)
     except (KeyError, IndexError):
-        # Missing param for an older row shape -- fall back to the action
-        # code rather than crashing the whole audit view.
-        return action
+        # Missing/corrupted params (e.g. a tampered row): say so in the user's
+        # language instead of showing a raw action code.
+        return _fallback(action, lang)

@@ -2,6 +2,7 @@
 // edit/delete, conversations, search, reports, contact, legal pages.
 // Loaded after i18n.js; merges into the same dictionary.
 I18n.extend('en', {
+  resetTokenInvalid: 'This password-reset link is not valid or was already used. Request a new one from "Forgot password".', resetTokenExpired: 'This password-reset link has expired (links last one hour). Request a new one.',
   err_BLOCKED_TYPE: 'This file type (executables and scripts) is not accepted as evidence.', err_CONTENT_MISMATCH: 'The file content does not match its extension, or it is an executable. Upload rejected.', err_EMPTY_FILE: 'The file is empty.',
   // v14
   err_INVALID_HANDLE: 'The username must be 3-30 characters: letters, digits, dot, dash or underscore, no spaces.',
@@ -160,6 +161,7 @@ I18n.extend('en', {
 });
 
 I18n.extend('ar', {
+  resetTokenInvalid: 'رابط استعادة كلمة المرور غير صالح أو سبق استخدامه. اطلب رابطاً جديداً من «نسيت كلمة المرور».', resetTokenExpired: 'انتهت صلاحية رابط استعادة كلمة المرور (مدته ساعة واحدة). اطلب رابطاً جديداً.',
   err_BLOCKED_TYPE: 'نوع الملف هذا (الملفات التنفيذية والسكربتات) غير مقبول كدليل.', err_CONTENT_MISMATCH: 'محتوى الملف لا يطابق امتداده أو أنه ملف تنفيذي. تم رفض الرفع.', err_EMPTY_FILE: 'الملف فارغ.',
   // v14
   err_INVALID_HANDLE: 'اسم المستخدم من 3 إلى 30 حرفاً: حروف وأرقام ونقطة وشرطة وشرطة سفلية، دون مسافات.',

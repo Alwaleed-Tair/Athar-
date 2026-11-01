@@ -30,7 +30,7 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> dic
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
     # A password change/reset bumps token_version, which ends every session
     # issued before it.
-    if int(payload.get("tv", 0)) != int(row["token_version"]):
+    if int(payload.get("tv") or 0) != int(row["token_version"] or 0):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     # Unverified accounts must not reach any protected function.
     if not row["email_verified"]:
