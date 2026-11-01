@@ -527,6 +527,10 @@ def get_evidence(evidence_id: int, user: dict = Depends(get_current_user), lang:
         {k: conv[k] for k in ("format", "message_count", "first_ts", "last_ts")} if conv else None
     )
     ev.pop("stored_name", None)
+    with get_conn() as conn:
+        t = conn.execute("SELECT text, source, extracted_at FROM evidence_text WHERE evidence_id = ?", (evidence_id,)).fetchone()
+    ev["ocr"] = ({"method": t["source"], "text": t["text"][:6000], "extracted_at": t["extracted_at"]}
+                 if t and t["source"].startswith("OCR_") else None)
     custody_log = []
     for r in rows:
         try:
@@ -693,6 +697,44 @@ def analyze_evidence(evidence_id: int, user: dict = Depends(get_current_user), l
         params={"username": user["username"], "filename": ev["filename"],
                 "sha256_before": hash_before, "sha256_after": hash_after, "ai_status": result.get("status")},
     )
+    return result
+
+
+@router.post("/evidence/{evidence_id}/ocr")
+def run_ocr(evidence_id: int, user: dict = Depends(get_current_user)):
+    """User-triggered text extraction from an image/screenshot (the image is
+    only read, never modified). If the text looks like a chat it is also
+    parsed into messages. Output is an approximation and labelled as such."""
+    ev, _case = _load_evidence(evidence_id, user)
+    if Path(ev["filename"]).suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="NOT_AN_IMAGE")
+    hash_before = _require_intact(ev, user)
+    result = analysis.ocr_image(str(config.EVIDENCE_DIR / ev["stored_name"]))
+    if integrity.file_sha256(config.EVIDENCE_DIR / ev["stored_name"]) != hash_before:
+        raise HTTPException(status_code=409, detail="INTEGRITY_FAILURE")
+    conversation = None
+    if result["status"] == "SUCCESS":
+        source = "OCR_" + result["method"]
+        with get_conn() as conn:
+            conn.execute("INSERT OR REPLACE INTO evidence_text (evidence_id, text, extracted_at, source) VALUES (?,?,?,?)",
+                         (evidence_id, result["text"], _now(), source))
+            conn.execute("DELETE FROM case_summary WHERE case_id = ?", (ev["case_id"],))
+            lines = [(f"ocr line {i}", ln) for i, ln in enumerate(result["text"].splitlines(), start=1)]
+            parsed = chats.parse_timestamped_lines(lines) or chats.parse_speaker_lines(lines)
+            if parsed:
+                parsed["format"] = "OCR_TEXT"
+                parsed["participants"] = [{"name": n, "messages": c} for n, c in
+                                          __import__("collections").Counter(m["sender"] for m in parsed["messages"] if m["sender"]).most_common()]
+                chats.store_conversation(conn, evidence_id, parsed)
+                conversation = {"format": "OCR_TEXT", "message_count": len(parsed["messages"])}
+            conn.commit()
+    audit.append_event(
+        "EVIDENCE_OCR_RUN", actor_id=user["id"], case_id=ev["case_id"], evidence_id=evidence_id,
+        params={"username": user["username"], "filename": ev["filename"], "method": result.get("method") or "NONE",
+                "status": result["status"], "sha256_before": hash_before, "sha256_after": hash_before},
+    )
+    result["conversation"] = conversation
+    result["is_approximation"] = True
     return result
 
 

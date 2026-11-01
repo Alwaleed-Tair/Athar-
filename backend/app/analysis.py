@@ -1110,3 +1110,73 @@ def summarize_conversation(meta: dict, messages: list[dict], total: int, lang: s
         "messages_shown": len(messages),
         "messages_total": total,
     }
+
+
+# --- OCR (text from images / screenshots) ---------------------------------------
+
+def tesseract_available() -> bool:
+    import shutil
+    return shutil.which("tesseract") is not None
+
+
+def ocr_image(file_path: str) -> dict:
+    """
+    Reads text out of an image WITHOUT touching the original: the image is
+    re-encoded to a temporary PNG first (this also makes HEIC work).
+    Method 1: local Tesseract (nothing leaves the server). Method 2: the AI
+    vision model, only if a key is configured (the image is then sent to the
+    provider). Returns {"status": SUCCESS|NO_TEXT|DISABLED|FAILED, "method", "text"}.
+    OCR output is an approximation and is always labelled as such.
+    """
+    import subprocess
+    import tempfile
+    import os as _os
+
+    if tesseract_available():
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                png = _os.path.join(tmp, "in.png")
+                with Image.open(file_path) as img:
+                    img.convert("RGB").save(png, "PNG")
+                import shutil
+                exe = shutil.which("tesseract")
+                for langs in (config.OCR_LANGS, "eng"):
+                    r = subprocess.run([exe, png, "stdout", "-l", langs], capture_output=True, timeout=90)
+                    if r.returncode == 0:
+                        break
+                else:
+                    return {"status": "FAILED", "method": "TESSERACT",
+                            "message_en": "Text extraction failed.", "message_ar": "فشل استخراج النص."}
+                text = r.stdout.decode("utf-8", errors="replace").strip()
+                return {"status": "SUCCESS" if text else "NO_TEXT", "method": "TESSERACT", "text": text}
+        except Exception:
+            return {"status": "FAILED", "method": "TESSERACT",
+                    "message_en": "Text extraction failed.", "message_ar": "فشل استخراج النص."}
+
+    if not ai_enabled():
+        return {
+            "status": "DISABLED", "method": None,
+            "message_en": "OCR is not available: Tesseract is not installed on the server and no AI key is configured.",
+            "message_ar": "استخراج النص غير متاح: Tesseract غير مثبّت على الخادم ولا يوجد مفتاح ذكاء اصطناعي.",
+        }
+    encoded = _encode_image_for_vision(file_path)
+    if not encoded:
+        return {"status": "FAILED", "method": "AI_VISION", "message_en": "The image could not be read.",
+                "message_ar": "تعذّرت قراءة الصورة."}
+    mime, b64 = encoded
+    prompt = (
+        "Transcribe ALL text visible in this image exactly as written (Arabic and/or English), "
+        "in reading order. If it is a screenshot of a chat, output one line per message in the form "
+        "'Sender: message' (add the time before the sender if it is visible, like '[10:15] Sender: message'). "
+        "Output only the transcription, no commentary. If there is no readable text, output exactly NO_TEXT."
+    )
+    try:
+        text, _fr = _call_vision_model(prompt, mime, b64, max_tokens=2000)
+    except Exception as exc:
+        return {"status": "FAILED", "method": "AI_VISION",
+                "message_en": f"Text extraction failed: {_safe_reason(exc)}.",
+                "message_ar": "فشل استخراج النص: تعذّر الحصول على رد من مزوّد الخدمة."}
+    text = (text or "").strip()
+    if not text or text.upper().startswith("NO_TEXT"):
+        return {"status": "NO_TEXT", "method": "AI_VISION", "text": ""}
+    return {"status": "SUCCESS", "method": "AI_VISION", "text": text[:config.MAX_FULLTEXT_CHARS]}

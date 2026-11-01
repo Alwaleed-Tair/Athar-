@@ -194,9 +194,9 @@ const Auth = (() => {
           </div>
           ${isRegister ? passwordChecklistHtml() : `
           <div class="forgot-pwd-row">
-            <a href="javascript:void(0)" class="forgot-pwd-link" id="forgot-pwd-trigger">
+            <button type="button" class="link-btn forgot-pwd-link" id="forgot-pwd-trigger">
               ${I18n.t('forgotPassword')}
-            </a>
+            </button>
           </div>
           `}
         </div>
@@ -207,9 +207,9 @@ const Auth = (() => {
       </form>
 
       <div style="text-align:center; margin-top:14px; font-size:0.84rem;">
-        <a href="javascript:void(0)" id="switch-mode" style="color:var(--color-cyan); font-weight:600;">
+        <button type="button" class="link-btn" id="switch-mode" style="color:var(--color-cyan); font-weight:600;">
           ${isRegister ? I18n.t('alreadyHaveAccount') : I18n.t('dontHaveAccount')}
-        </a>
+        </button>
       </div>
 
       <div class="restricted-warning-box">
@@ -420,26 +420,92 @@ const Auth = (() => {
     return wrap;
   }
 
-  // There is no outgoing mail server, so rather than pretend to send a
-  // reset link, tell the user how a reset actually happens here: an
-  // admin sets a new password from the Users screen.
+  // Forgot password: asks for the e-mail and sends a one-hour, single-use
+  // reset link. The answer is the same whether or not the account exists, and
+  // it says so honestly if the server cannot send e-mail.
   function openForgotPasswordModal() {
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="modal-header">
-        <h3 style="display:flex; align-items:center; gap:8px; margin:0;">
-          ${UI.icon('key', '', 20)}
-          <span>${I18n.t('forgotPasswordTitle')}</span>
-        </h3>
+        <h3 style="display:flex; align-items:center; gap:8px; margin:0;">${UI.icon('key', '', 20)} <span>${I18n.t('forgotPasswordTitle')}</span></h3>
       </div>
-      <p>${I18n.t('forgotPasswordContactAdmin')}</p>
-      <div class="flex gap-2" style="justify-content:flex-end; margin-top:20px;">
-        <button type="button" id="fp-close" class="btn btn-primary">${I18n.t('gotIt')}</button>
-      </div>
-    `;
+      <p class="text-muted text-sm">${I18n.t('forgotIntro')}</p>
+      <div id="fp-msg" aria-live="polite"></div>
+      <form id="fp-form" novalidate>
+        <div class="field"><label for="fp-email">${I18n.t('investigatorEmail')}</label>
+          <input id="fp-email" type="email" dir="ltr" autocomplete="email" autocapitalize="off" /></div>
+        <div class="flex gap-2" style="justify-content:flex-end; margin-top:16px;">
+          <button type="button" id="fp-close" class="btn">${I18n.t('close')}</button>
+          <button type="submit" id="fp-send" class="btn btn-primary">${UI.icon('mail', '', 15)} <span>${I18n.t('forgotSend')}</span></button>
+        </div>
+      </form>`;
     const { close } = UI.openModal(content);
     content.querySelector('#fp-close').onclick = close;
+    content.querySelector('#fp-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = content.querySelector('#fp-email').value.trim();
+      const msg = content.querySelector('#fp-msg');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { msg.innerHTML = `<div class="alert alert-danger">${I18n.t('contactErrEmail')}</div>`; return; }
+      const btn = content.querySelector('#fp-send');
+      btn.disabled = true;
+      try {
+        const r = await Api.forgotPassword(email);
+        const ok = r.email_delivery === 'SENT' || r.email_delivery === 'CONSOLE';
+        msg.innerHTML = ok
+          ? `<div class="alert alert-success">${UI.icon('check', '', 16)} <span>${I18n.t('forgotSent')}</span></div>`
+          : `<div class="alert alert-warning">${UI.icon('alertTriangle', '', 16)} <span>${I18n.t('forgotNotSent')}</span></div>`;
+      } catch (err) {
+        msg.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(err))}</div>`;
+      }
+      setTimeout(() => { btn.disabled = false; }, 3000);
+    });
   }
 
-  return { renderLogin, renderVerifyPage, passwordChecklistHtml, wirePasswordChecklist, isStrongPassword, friendlyError };
+  // Landing page for the link in the reset e-mail (?reset=TOKEN).
+  async function renderResetPage(token) {
+    const wrap = document.createElement('div');
+    wrap.className = 'login-wrap';
+    const symbolSrc = State.get().theme === 'dark' ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    const card = document.createElement('div');
+    card.className = 'card login-card';
+    card.innerHTML = `
+      <div class="login-cyber-logo"><img src="${symbolSrc}" alt="ATHAR" class="athar-logo-img" /></div>
+      <div class="login-brand-name">${I18n.t('resetTitle')}</div>
+      <div id="rs-msg" class="mt-3" aria-live="polite"></div>
+      <form id="rs-form" novalidate>
+        <div class="field"><label for="rs-pw">${I18n.t('newPassword')}</label>
+          <div class="field-with-icon"><span class="field-icon">${UI.icon('key', '', 17)}</span>
+            <input id="rs-pw" type="password" class="input-with-icon" autocomplete="new-password" autocapitalize="off" spellcheck="false" /></div>
+          ${passwordChecklistHtml()}</div>
+        <div class="field"><label for="rs-pw2">${I18n.t('accountConfirmPassword')}</label>
+          <div class="field-with-icon"><span class="field-icon">${UI.icon('key', '', 17)}</span>
+            <input id="rs-pw2" type="password" class="input-with-icon" autocomplete="new-password" autocapitalize="off" spellcheck="false" /></div></div>
+        <button type="submit" class="btn btn-primary btn-neon w-full" id="rs-go">${I18n.t('resetSubmit')}</button>
+      </form>
+      <div class="mt-3" style="text-align:center;"><button type="button" class="btn btn-ghost btn-sm" id="rs-login">${I18n.t('backToLogin')}</button></div>`;
+    wrap.appendChild(card);
+    wirePasswordChecklist(card, card.querySelector('#rs-pw'));
+    const msg = card.querySelector('#rs-msg');
+    card.querySelector('#rs-login').onclick = () => { authMode = 'login'; State.set({ route: { name: 'login' } }); };
+    card.querySelector('#rs-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pw = card.querySelector('#rs-pw').value;
+      const fail = (t) => { msg.innerHTML = `<div class="alert alert-danger">${UI.icon('alertTriangle', '', 16)} <span>${UI.escapeHtml(t)}</span></div>`; };
+      if (!isStrongPassword(pw)) return fail(I18n.t('passwordTooWeak'));
+      if (pw !== card.querySelector('#rs-pw2').value) return fail(I18n.t('accountPasswordMismatch'));
+      const btn = card.querySelector('#rs-go');
+      btn.disabled = true;
+      try {
+        await Api.resetPassword(token, pw);
+        card.querySelector('#rs-form').remove();
+        msg.innerHTML = `<div class="alert alert-success">${UI.icon('shieldCheck', '', 18)} <span>${I18n.t('resetDone')}</span></div>`;
+      } catch (err) {
+        fail(UI.errorMessage(err));
+        btn.disabled = false;
+      }
+    });
+    return wrap;
+  }
+
+  return { renderLogin, renderVerifyPage, renderResetPage, passwordChecklistHtml, wirePasswordChecklist, isStrongPassword, friendlyError };
 })();

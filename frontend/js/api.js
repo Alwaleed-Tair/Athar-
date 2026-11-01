@@ -98,7 +98,16 @@ const Api = (() => {
     verifyEmail: (token) => request('POST', '/api/auth/verify-email', { body: { token } }),
     resendVerification: (email) => request('POST', '/api/auth/resend-verification', { body: { email } }),
     me: () => request('GET', '/api/auth/me'),
-    updateProfile: (fullName) => request('PATCH', '/api/auth/me', { body: { full_name: fullName } }),
+    updateProfile: (fullName, handle) => request('PATCH', '/api/auth/me', { body: { full_name: fullName, handle } }),
+    forgotPassword: (email) => request('POST', '/api/auth/forgot-password', { body: { email } }),
+    resetPassword: (token, newPassword) => request('POST', '/api/auth/reset-password', { body: { token, new_password: newPassword } }),
+    deleteAccount: (password) => request('POST', '/api/auth/delete-account', { body: { password } }),
+    runOcr: (id) => request('POST', `/api/evidence/${id}/ocr`),
+    semanticSearch: (q, caseId) => {
+      const p = new URLSearchParams({ q });
+      if (caseId) p.append('case_id', caseId);
+      return request('GET', `/api/search/semantic?${p.toString()}`);
+    },
     changePassword: (currentPassword, newPassword) =>
       request('POST', '/api/auth/change-password', { body: { current_password: currentPassword, new_password: newPassword } }),
     createUser: (payload) => request('POST', '/api/users', { body: payload }),

@@ -7,7 +7,7 @@ const Conversation = (() => {
 
   const FORMAT_LABEL = {
     TEXT_TIMESTAMPED: 'convFormatText', TEXT_SPEAKERS: 'convFormatSpeakers', JSON: 'convFormatJson',
-    CSV: 'convFormatCsv', PDF_TEXT: 'convFormatPdf', DOCX_TEXT: 'convFormatDocx',
+    CSV: 'convFormatCsv', PDF_TEXT: 'convFormatPdf', DOCX_TEXT: 'convFormatDocx', OCR_TEXT: 'convFormatOcr',
   };
 
   const LINK_REASON = {

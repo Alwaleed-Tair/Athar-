@@ -74,6 +74,7 @@ T = {
         "flag_dup": "{n} duplicate file pair(s)", "flag_edit": "{n} image(s) whose EXIF names an editing tool", "flag_nometa": "{n} image(s) with no camera metadata",
         "exec_ai": "An AI-generated draft summary exists and is shown separately in section 8; it is not part of this verified summary.",
         "uploader_unknown": "unknown",
+        "ocr_note": "Text was extracted from this image by OCR ({m}). OCR output is approximate and may contain errors.",
     },
     "ar": {
         "title": "تقرير الأدلة الرقمية", "sub": "أَثَر - منصة عهدة الأدلة الرقمية",
@@ -122,6 +123,7 @@ T = {
         "flag_dup": "{n} زوج من الملفات المكررة", "flag_edit": "{n} صورة يذكر EXIF فيها أداة تحرير", "flag_nometa": "{n} صورة بلا بيانات كاميرا",
         "exec_ai": "توجد مسودة ملخص بالذكاء الاصطناعي، وهي معروضة منفصلة في القسم ٨ وليست جزءاً من هذا الملخص المحقق.",
         "uploader_unknown": "غير معروف",
+        "ocr_note": "استُخرج نص هذه الصورة بتقنية OCR ({m}). مخرجات OCR تقريبية وقد تحتوي أخطاء.",
     },
 }
 
@@ -176,6 +178,7 @@ def _gather(conn, user: dict, case_id: int, lang: str) -> dict:
             "row": r, "integrity": result, "actual": actual, "exif": exif, "is_image": is_image, "ind": ind,
             "device": f"{make or ''} {model or ''}".strip() or None,
             "capture": exif.get("DateTime"), "software": exif.get("Software"),
+            "ocr": (conn.execute("SELECT source FROM evidence_text WHERE evidence_id = ?", (r["id"],)).fetchone() or {"source": ""})["source"],
             "conv": conv, "stats": chats.compute_stats(conn, r["id"]) if conv else None,
             "analysis": json.loads(an["result_json"]) if an else None,
             "auth": json.loads(au["result_json"]) if au else None,
@@ -312,6 +315,8 @@ def build_report(conn, user: dict, case_id: int, lang: str) -> tuple[bytes, dict
                     p.callout(t["editing"].format(sw=i["software"]), AMBER, AMBER_BG)
                 elif i["ind"]["missing_camera_metadata"]:
                     p.para(t["exif_missing"], size=8.6, color=GREY)
+                if i["ocr"].startswith("OCR_"):
+                    p.callout(t["ocr_note"].format(m=i["ocr"][4:]), AMBER, AMBER_BG)
             else:
                 p.para(i["row"]["content_type"] or i["row"]["filename"].rsplit(".", 1)[-1].upper(), size=8.6, color=GREY)
 

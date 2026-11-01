@@ -17,6 +17,7 @@ a case or a piece of evidence.
 - **Pages**: privacy policy, terms of use, how analysis works, contact form (stored; e-mailed only if SMTP is configured), reachable without signing in.
 - **Security**: removed the hard-coded demo passwords; login lockout; sessions end on password change; security headers/CSP; upload magic-byte check and filename sanitising; AI provider errors no longer shown; evidence is passed to the AI as inert data (prompt-injection hardening); admins no longer have a way into other users' cases; case sharing is owner-only by exact e-mail.
 - **Tests**: `cd backend && pip install pytest httpx && python -m pytest tests`.
+- **Also added**: editable username (handle, usable to sign in), password reset by e-mailed one-hour link, self-service account deletion, OCR on images (local Tesseract if installed, otherwise the AI vision model; output labelled approximate and parsed into messages when it looks like a chat), and optional search by meaning (`ATHAR_EMBED_KEY`/`ATHAR_EMBED_URL`/`ATHAR_EMBED_MODEL`, any OpenAI-compatible embeddings endpoint; disabled by default).
 - Najiz: see `docs/NAJIZ_INTEGRATION.md` (study only, nothing implemented).
 
 > Deployment note: SQLite and evidence files live in `backend/storage/`. On Render's free tier the disk is ephemeral - attach a persistent disk or data is lost on redeploy.

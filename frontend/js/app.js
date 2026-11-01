@@ -156,6 +156,12 @@ async function render() {
     return;
   }
 
+  if (route.name === 'reset') {
+    root.appendChild(await Auth.renderResetPage(route.token));
+    root.appendChild(Pages.footer());
+    return;
+  }
+
   const isPublicPage = Pages.PUBLIC.includes(route.name);
 
   if (!user) {
@@ -216,6 +222,13 @@ window.addEventListener('hashchange', () => {
   if (verifyToken) {
     try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
     State.set({ route: { name: 'verify', token: verifyToken } });
+    return;
+  }
+
+  const resetToken = new URLSearchParams(location.search).get('reset');
+  if (resetToken) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+    State.set({ route: { name: 'reset', token: resetToken } });
     return;
   }
 

@@ -19,3 +19,16 @@ def search(
     results (indistinguishable from a case with no matches)."""
     with get_conn() as conn:
         return relations.search_all(conn, user["id"], q, case_id=case_id)
+
+
+@router.get("/search/semantic")
+def semantic_search(
+    q: str = Query(min_length=2, max_length=300),
+    case_id: int | None = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
+    """Search by meaning (embeddings). Disabled unless an embeddings provider is
+    configured; limited to the caller's own cases like every other search."""
+    from .. import embeddings
+    with get_conn() as conn:
+        return embeddings.search(conn, user["id"], q, case_id=case_id)

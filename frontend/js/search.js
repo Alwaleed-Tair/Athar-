@@ -35,6 +35,7 @@ const Search = (() => {
           <option value="case">${I18n.t('searchScopeCase')}</option>
           <option value="all">${I18n.t('searchScopeAll')}</option>
         </select>
+        <label class="check-inline" title="${I18n.t('semanticHint')}"><input type="checkbox" id="search-sem" /> <span>${I18n.t('semanticOption')}</span></label>
         <button type="submit" class="btn btn-primary" id="search-go">${UI.icon('search', '', 15)} <span>${I18n.t('search')}</span></button>
       </form>
       <div id="search-results" class="mt-3" aria-live="polite"></div>
@@ -66,9 +67,14 @@ const Search = (() => {
       btn.disabled = true;
       results.innerHTML = UI.spinner(I18n.t('searching'));
       try {
+        const wantSem = searchCard.querySelector('#search-sem').checked;
+        const semPromise = wantSem ? Api.semanticSearch(q, scope === 'case' ? caseId : null).catch(() => ({ status: 'FAILED', results: [] })) : null;
         const r = await Api.search(q, scope === 'case' ? caseId : null);
-        const total = r.cases.length + r.evidence.length + r.messages.length;
-        if (!total) {
+        const sem = semPromise ? await semPromise : null;
+        r.semantic = sem;
+        const semCount = r.semantic && r.semantic.status === 'SUCCESS' ? r.semantic.results.length : 0;
+        const total = r.cases.length + r.evidence.length + r.messages.length + semCount;
+        if (!total && !(r.semantic && r.semantic.status !== 'SUCCESS')) {
           results.innerHTML = `<div class="empty-state"><h3>${I18n.t('searchNoResults')}</h3><p>${I18n.t('searchNoResultsBody', { q: UI.escapeHtml(q) })}</p></div>`;
         } else {
           let html = '';
@@ -91,6 +97,20 @@ const Search = (() => {
                 <div class="text-xs text-muted"><strong>${UI.escapeHtml(m.sender || I18n.t('convSystemMessage'))}</strong> · <bdi dir="ltr">${UI.escapeHtml(UI.formatLocalStamp(m.ts))}</bdi> · ${UI.escapeHtml(m.filename)} · #${m.idx} <bdi dir="ltr">${UI.escapeHtml(m.source_ref)}</bdi>${scope === 'all' ? ' · ' + UI.escapeHtml(m.case_name) : ''}</div>
                 <div class="text-sm" dir="auto">${UI.highlight(m.snippet, q)}</div>
               </button>`).join(''));
+          }
+          if (r.semantic) {
+            if (r.semantic.status === 'DISABLED') html += `<div class="alert alert-warning">${I18n.t('semanticDisabled')}</div>`;
+            else if (r.semantic.status === 'FAILED') html += `<div class="alert alert-danger">${I18n.t('semanticFailed')}</div>`;
+            else if (r.semantic.results.length) {
+              html += section(I18n.t('semanticSection'), r.semantic.results.length,
+                `<p class="text-muted text-xs">${I18n.t('semanticNote')}</p>` + r.semantic.results.map((x) => `
+                <button type="button" class="result-row" data-ev="${x.evidence_id}">
+                  <div><strong dir="auto">${UI.escapeHtml(x.title || x.filename)}</strong>
+                    ${scope === 'all' ? `<span class="text-muted text-xs"> — ${UI.escapeHtml(x.case_name)}</span>` : ''}
+                    <span class="chip chip-warn">${I18n.t('semanticScore')}: ${Math.round(x.score * 100)}%</span></div>
+                  <div class="text-muted text-sm" dir="auto">${UI.escapeHtml(x.snippet)}</div>
+                </button>`).join(''));
+            }
           }
           results.innerHTML = html;
           results.querySelectorAll('[data-ev]').forEach((b) => { b.onclick = () => openEv(Number(b.dataset.ev)); });

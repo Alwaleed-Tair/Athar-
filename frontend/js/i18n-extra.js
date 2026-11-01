@@ -2,6 +2,30 @@
 // edit/delete, conversations, search, reports, contact, legal pages.
 // Loaded after i18n.js; merges into the same dictionary.
 I18n.extend('en', {
+  // v14
+  err_INVALID_HANDLE: 'The username must be 3-30 characters: letters, digits, dot, dash or underscore, no spaces.',
+  err_HANDLE_TAKEN: 'This username is already taken.', err_LAST_ADMIN: 'You are the last administrator; create another admin before deleting this account.',
+  err_NOT_AN_IMAGE: 'Text extraction works on images only.',
+  accountUsername: 'Username', accountUsernameHint: 'Public handle (3-30 characters). You can also sign in with it.',
+  accountDeleteTitle: 'Delete my account', accountDeleteBody: 'This permanently deletes your account. It cannot be undone.',
+  accountDeleteCases: 'Cases you own that others belong to are handed to the member who joined first; cases only you belong to are archived with their evidence (30-day retention).',
+  accountDeleteData: 'Your name, e-mail, username, password and contact messages are erased.',
+  accountDeleteAudit: 'The append-only audit log keeps the entries made while you used the platform, including the name/e-mail recorded then.',
+  accountDeleteBtn: 'Delete my account', accountDeleteConfirm: 'Enter your password and type the confirmation word to delete your account.',
+  accountDeleteType: 'Type "{word}" to confirm', accountDeleteWord: 'DELETE', accountDeleteWordMismatch: 'The confirmation word does not match.',
+  accountDeleted: 'Your account was deleted.',
+  forgotIntro: 'Enter your account e-mail and we will send a link (valid for one hour) to choose a new password.', forgotSend: 'Send reset link',
+  forgotSent: 'If this e-mail belongs to an account, a reset link has been sent.',
+  forgotNotSent: 'The e-mail could not be sent right now (the e-mail service is not available). Ask an administrator to reset your password, or use the Contact page.',
+  resetTitle: 'Choose a new password', resetSubmit: 'Save new password', resetDone: 'Your password was changed. You can sign in with it now.',
+  ocrTitle: 'Text in this image (OCR)', ocrHint: 'Reads text from the image, e.g. a chat screenshot. The result is approximate. If the server has no local OCR engine the image is sent to the AI provider.',
+  ocrRun: 'Extract text', ocrRerun: 'Extract again', ocrRunning: 'Reading the image…', ocrNoText: 'No readable text was found in this image.',
+  ocrApprox: 'Extracted by OCR ({method}): approximate, may contain errors - check against the image.', ocrMethodAi: 'AI vision',
+  convFormatOcr: 'Text read from an image (OCR)',
+  semanticOption: 'Also search by meaning', semanticHint: 'Finds related wording even without the same words. Sends text of your own evidence to the embeddings provider.',
+  semanticSection: 'Similar in meaning', semanticScore: 'similarity', semanticNote: 'Ranked by an AI embedding model; an estimate, not proof.',
+  semanticDisabled: 'Search by meaning is not enabled on this server (no embeddings provider configured). Keyword results are shown.', semanticFailed: 'Search by meaning failed right now. Keyword results are shown.',
+
   caseTitlePlaceholder: 'e.g. Warehouse theft - Riyadh', caseDescPlaceholder: 'Short description of the case…',
   // generic
   loading: 'Loading…', optional: 'optional', actions: 'Actions', view: 'View', edit: 'Edit', delete: 'Delete',
@@ -135,6 +159,30 @@ I18n.extend('en', {
 });
 
 I18n.extend('ar', {
+  // v14
+  err_INVALID_HANDLE: 'اسم المستخدم من 3 إلى 30 حرفاً: حروف وأرقام ونقطة وشرطة وشرطة سفلية، دون مسافات.',
+  err_HANDLE_TAKEN: 'اسم المستخدم مستخدم بالفعل.', err_LAST_ADMIN: 'أنت آخر مسؤول؛ أنشئ مسؤولاً آخر قبل حذف هذا الحساب.',
+  err_NOT_AN_IMAGE: 'استخراج النص يعمل على الصور فقط.',
+  accountUsername: 'اسم المستخدم', accountUsernameHint: 'معرّف عام (3-30 حرفاً). ويمكنك تسجيل الدخول به أيضاً.',
+  accountDeleteTitle: 'حذف حسابي', accountDeleteBody: 'يحذف هذا الإجراء حسابك نهائياً ولا يمكن التراجع عنه.',
+  accountDeleteCases: 'القضايا التي تملكها ويشارك فيها آخرون تنتقل لأول عضو انضم إليها؛ والقضايا التي أنت وحدك فيها تُؤرشف مع أدلتها (احتفاظ 30 يوماً).',
+  accountDeleteData: 'يُمحى اسمك وبريدك واسم المستخدم وكلمة المرور ورسائل التواصل.',
+  accountDeleteAudit: 'سجل التدقيق للإضافة فقط ويحتفظ بالسجلات التي تمت أثناء استخدامك المنصة، بما فيها الاسم/البريد المسجَّل وقتها.',
+  accountDeleteBtn: 'حذف حسابي', accountDeleteConfirm: 'أدخل كلمة المرور واكتب كلمة التأكيد لحذف حسابك.',
+  accountDeleteType: 'اكتب "{word}" للتأكيد', accountDeleteWord: 'حذف', accountDeleteWordMismatch: 'كلمة التأكيد غير مطابقة.',
+  accountDeleted: 'تم حذف حسابك.',
+  forgotIntro: 'أدخل بريد حسابك وسنرسل رابطاً (صالحاً لساعة واحدة) لاختيار كلمة مرور جديدة.', forgotSend: 'إرسال رابط الاستعادة',
+  forgotSent: 'إذا كان هذا البريد يخص حساباً فقد أُرسل رابط الاستعادة.',
+  forgotNotSent: 'تعذّر إرسال البريد حالياً (خدمة البريد غير متاحة). اطلب من مسؤول النظام إعادة تعيين كلمة المرور أو استخدم صفحة التواصل.',
+  resetTitle: 'اختر كلمة مرور جديدة', resetSubmit: 'حفظ كلمة المرور الجديدة', resetDone: 'تم تغيير كلمة المرور. يمكنك تسجيل الدخول بها الآن.',
+  ocrTitle: 'النص داخل هذه الصورة (OCR)', ocrHint: 'يقرأ النص من الصورة، مثل لقطة محادثة. النتيجة تقريبية. إذا لم يوجد محرك OCR محلي على الخادم تُرسل الصورة إلى مزوّد الذكاء الاصطناعي.',
+  ocrRun: 'استخراج النص', ocrRerun: 'استخراج مرة أخرى', ocrRunning: 'جارٍ قراءة الصورة…', ocrNoText: 'لم يُعثر على نص مقروء في هذه الصورة.',
+  ocrApprox: 'استُخرج بتقنية OCR ({method}): تقريبي وقد يحتوي أخطاء - قارنه بالصورة.', ocrMethodAi: 'رؤية الذكاء الاصطناعي',
+  convFormatOcr: 'نص مقروء من صورة (OCR)',
+  semanticOption: 'ابحث أيضاً بالمعنى', semanticHint: 'يجد صياغات مقاربة حتى دون نفس الكلمات. يرسل نص أدلتك إلى مزوّد التضمين.',
+  semanticSection: 'متقاربة في المعنى', semanticScore: 'التقارب', semanticNote: 'مرتّبة بنموذج تضمين ذكاء اصطناعي؛ تقدير وليس إثباتاً.',
+  semanticDisabled: 'البحث بالمعنى غير مفعّل على هذا الخادم (لا يوجد مزوّد تضمين). تُعرض نتائج الكلمات.', semanticFailed: 'تعذّر البحث بالمعنى حالياً. تُعرض نتائج الكلمات.',
+
   caseTitlePlaceholder: 'مثال: سرقة مستودع - الرياض', caseDescPlaceholder: 'وصف مختصر للقضية…',
   loading: 'جارٍ التحميل…', optional: 'اختياري', actions: 'الإجراءات', view: 'عرض', edit: 'تعديل', delete: 'حذف',
   clear: 'مسح', confirm: 'تأكيد', search: 'بحث', searching: 'جارٍ البحث…', showPassword: 'إظهار / إخفاء كلمة المرور',

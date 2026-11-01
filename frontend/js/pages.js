@@ -28,14 +28,15 @@ const Pages = (() => {
           ]},
           { h: '4. Third-party services', list: [
             'AI provider: when AI features are enabled and they run (when you trigger them, automatically on the case Overview screen the first time it is opened, and on the Evidence map screen each time it is opened), extracted text, chat messages (a sample for long chats), image descriptions, image content (for authenticity triage and descriptions), file names, hashes, EXIF details and case names are sent to the configured AI provider (DeepSeek by default) for processing. If no AI key is configured, nothing is sent and the features are disabled.',
-            'E-mail provider: when e-mail is configured, your e-mail address and the verification link are sent through the operator\'s SMTP provider.',
+            'E-mail provider: when e-mail is configured, your e-mail address and the verification / password-reset links are sent through the operator\'s SMTP provider.',
+            'Text extraction (OCR): if the server has no local OCR engine, an image you ask to read is sent to the AI provider. Search by meaning, if enabled, sends your query and chunks of your own evidence text to the configured embeddings provider. Both only happen when you use those features.',
             'Do not upload evidence you are not allowed to process with such providers.',
           ]},
           { h: '5. Retention and deletion', list: [
             'Deleting evidence removes it immediately from lists, search, maps, reports and AI inputs, and removes the text, parsed messages and AI results derived from it. The stored file and its hash are kept for 30 days (the default retention period, set by the operator) so mistakes can be recovered and custody can be proven, then the file is permanently deleted.',
             'The audit log is append-only and is never edited or deleted, because its purpose is to prove what happened. It will therefore still show that an item existed and was deleted, with its name and hash.',
             'Deleting a case archives it (hides it from everyone); its evidence and audit log are kept under the same rules.',
-            'There is no self-service account deletion yet. To ask for access to, correction of or deletion of your personal data, use the Contact page; requests are handled by the operator, subject to the audit-log rule above.',
+            'You can delete your account yourself from My account (password required). Your name, e-mail, username, password hash and contact messages are erased; cases only you belong to are archived, cases others belong to are handed to the member who joined first. The audit log still contains the name/e-mail recorded at the time of each event. For access or correction requests use the Contact page.',
           ]},
           { h: '6. Security measures', list: [
             'Passwords are hashed with salted PBKDF2-SHA256; sign-in attempts are rate-limited; accounts must verify their e-mail before use; changing a password ends all other sessions.',
@@ -67,14 +68,15 @@ const Pages = (() => {
           ]},
           { h: '٤. خدمات الأطراف الثالثة', list: [
             'مزوّد الذكاء الاصطناعي: عند تفعيل ميزات الذكاء الاصطناعي وتشغيلها (عند تشغيلها منك، أو تلقائياً في شاشة النظرة العامة عند أول فتح لها، وفي شاشة خريطة الأدلة عند كل فتح لها)، تُرسَل النصوص المستخرجة ورسائل المحادثات (عينة منها للمحادثات الطويلة) ووصف الصور ومحتوى الصور (لفحص الأصالة والوصف) وأسماء الملفات والبصمات وتفاصيل EXIF وأسماء القضايا إلى مزوّد الذكاء الاصطناعي المضبوط (DeepSeek افتراضياً) لمعالجتها. إذا لم يُضبط مفتاح الذكاء الاصطناعي فلا يُرسل شيء وتبقى الميزات معطّلة.',
-            'مزوّد البريد: عند ضبط البريد الإلكتروني يُرسَل بريدك ورابط التفعيل عبر خادم SMTP الخاص بالمشغّل.',
+            'مزوّد البريد: عند ضبط البريد الإلكتروني يُرسَل بريدك وروابط التفعيل/استعادة كلمة المرور عبر خادم SMTP الخاص بالمشغّل.',
+            'استخراج النص (OCR): إذا لم يوجد محرك OCR محلي على الخادم تُرسَل الصورة التي تطلب قراءتها إلى مزوّد الذكاء الاصطناعي. والبحث بالمعنى، إن فُعّل، يرسل استعلامك وأجزاء من نصوص أدلتك إلى مزوّد التضمين المضبوط. وكلاهما لا يحدث إلا عند استخدامك لهاتين الميزتين.',
             'لا ترفع أدلة غير مسموح لك بمعالجتها لدى هذه الجهات.',
           ]},
           { h: '٥. الاحتفاظ بالبيانات وحذفها', list: [
             'حذف الدليل يزيله فوراً من القوائم والبحث والخرائط والتقارير ومدخلات الذكاء الاصطناعي، ويحذف النص والرسائل المحلَّلة ونتائج الذكاء الاصطناعي المشتقة منه. أما الملف المخزّن وبصمته فيُحتفظ بهما 30 يوماً (مدة الاحتفاظ الافتراضية التي يحددها المشغّل) لإمكان التراجع عن الأخطاء وإثبات العهدة، ثم يُحذف الملف نهائياً.',
             'سجل التدقيق للإضافة فقط ولا يُعدَّل أو يُحذف، لأن غرضه إثبات ما حدث. لذلك سيبقى يُظهر أن العنصر وُجد ثم حُذف مع اسمه وبصمته.',
             'حذف القضية يؤرشفها (يخفيها عن الجميع)، وتبقى أدلتها وسجلها بنفس القواعد.',
-            'لا يوجد حتى الآن حذف ذاتي للحساب. لطلب الاطلاع على بياناتك الشخصية أو تصحيحها أو حذفها استخدم صفحة التواصل؛ يعالج المشغّل الطلبات مع مراعاة قاعدة سجل التدقيق أعلاه.',
+            'يمكنك حذف حسابك بنفسك من «حسابي» (يلزم إدخال كلمة المرور). يُمحى اسمك وبريدك واسم المستخدم ونسخة كلمة المرور ورسائل التواصل؛ وتُؤرشف القضايا التي أنت وحدك فيها، وتنتقل القضايا التي يشارك فيها آخرون لأول عضو انضم إليها. ويبقى سجل التدقيق محتوياً على الاسم/البريد المسجَّل وقت كل حدث. لطلبات الاطلاع أو التصحيح استخدم صفحة التواصل.',
           ]},
           { h: '٦. إجراءات الأمان', list: [
             'تُشفَّر كلمات المرور بـ PBKDF2-SHA256 مع ملح، وتُقيَّد محاولات الدخول، ويجب تفعيل البريد قبل استخدام الحساب، وتغيير كلمة المرور ينهي كل الجلسات الأخرى.',
@@ -105,7 +107,7 @@ const Pages = (() => {
             'What a document or chat says is a claim made by its author. ATHAR shows it as written and does not verify that it is true.',
           ]},
           { h: '4. Accuracy limits', list: [
-            'Hash checks, EXIF extraction and text/conversation parsing are deterministic, but depend on the file: scanned documents and images contain no extractable text (there is no OCR); EXIF can be absent or forged; chat timestamps carry no time zone and some formats have an ambiguous day/month order.',
+            'Hash checks, EXIF extraction and text/conversation parsing are deterministic, but depend on the file: scanned documents and screenshots only yield text through OCR on request, which is approximate and can contain errors; EXIF can be absent or forged; chat timestamps carry no time zone and some formats have an ambiguous day/month order.',
             'The chain-of-custody log is tamper-evident: it reveals edits to existing records and removed records. It cannot by itself prove who held a file before it was uploaded, and an operator with full database access could in principle rebuild the whole log.',
           ]},
           { h: '5. Availability and changes', list: [
@@ -134,7 +136,7 @@ const Pages = (() => {
             'ما يقوله المستند أو المحادثة هو ادعاء صاحبه. تعرضه أثر كما كُتب ولا تتحقق من صحته.',
           ]},
           { h: '٤. حدود الدقة', list: [
-            'فحوص البصمة واستخراج EXIF وتحليل النصوص والمحادثات حتمية، لكنها تعتمد على الملف: المستندات الممسوحة ضوئياً والصور لا تحتوي نصاً قابلاً للاستخراج (لا يوجد OCR)؛ وقد يغيب EXIF أو يُزوَّر؛ وأوقات المحادثات بلا منطقة زمنية، وبعض الصيغ يكون ترتيب اليوم/الشهر فيها غامضاً.',
+            'فحوص البصمة واستخراج EXIF وتحليل النصوص والمحادثات حتمية، لكنها تعتمد على الملف: المستندات الممسوحة ضوئياً ولقطات الشاشة لا يُستخرج نصها إلا بطلب OCR، وهو تقريبي وقد يحتوي أخطاء؛ وقد يغيب EXIF أو يُزوَّر؛ وأوقات المحادثات بلا منطقة زمنية، وبعض الصيغ يكون ترتيب اليوم/الشهر فيها غامضاً.',
             'سجل سلسلة العهدة يكشف التلاعب: يُظهر تعديل السجلات الموجودة وحذف السجلات. لكنه لا يثبت بذاته من حاز الملف قبل رفعه، ويمكن نظرياً لمشغّل يملك صلاحية كاملة على قاعدة البيانات إعادة بناء السجل بأكمله.',
           ]},
           { h: '٥. التوفر والتغييرات', list: [
@@ -150,9 +152,9 @@ const Pages = (() => {
         updated: 'From upload to report - what happens to your evidence at each step.',
         steps: [
           { h: 'Upload and registration', p: 'The file is streamed to storage while its SHA-256 hash is computed at the same time. The name is cleaned, executable types are refused, the content must match its extension, and the size is limited. The hash and an "uploaded" event are written to the chain of custody. The original is never changed afterwards.' },
-          { h: 'Extraction (deterministic)', p: 'Images: EXIF metadata (camera, capture time, software). Text files, PDF and Word: full text. Chat exports (WhatsApp text, Telegram/Instagram JSON, CSV, and chats inside PDF/Word): each message is parsed into sender, time and text, with its exact source position (line, page or row). Scanned pages and screenshots have no extractable text - ATHAR has no OCR - so they are only described by the optional AI vision step.' },
+          { h: 'Extraction (deterministic)', p: 'Images: EXIF metadata (camera, capture time, software). Text files, PDF and Word: full text. Chat exports (WhatsApp text, Telegram/Instagram JSON, CSV, and chats inside PDF/Word): each message is parsed into sender, time and text, with its exact source position (line, page or row). Scanned pages and screenshots have no embedded text: you can ask ATHAR to read them with OCR (local Tesseract if installed, otherwise the AI vision model). OCR output is approximate, marked as such, and a chat screenshot is parsed into messages when the text looks like a chat.' },
           { h: 'Integrity checks', p: 'Before a file is downloaded or analysed ATHAR re-computes its SHA-256 and compares it with the value recorded at upload. If they differ the action is refused and the mismatch is logged. For AI analysis the hash is checked before and after, and both values are recorded.' },
-          { h: 'Linking evidence (deterministic, explainable)', p: 'Items are linked when they share an identical hash, the same camera model, the same phone number / e-mail / IBAN / URL, the same chat participant, or similar wording (a lexical TF-IDF score - shared distinctive words, not meaning). Every link shows its exact reason. Only cases you are a member of are ever compared.' },
+          { h: 'Linking evidence (deterministic, explainable)', p: 'Items are linked when they share an identical hash, the same camera model, the same phone number / e-mail / IBAN / URL, the same chat participant, or similar wording (a lexical TF-IDF score - shared distinctive words, not meaning). Optionally, if an embeddings provider is configured, you can also search by meaning. Every link shows its exact reason. Only cases you are a member of are ever compared.' },
           { h: 'AI-assisted analysis (optional, labelled)', p: 'If an AI key is configured, extracted text, chat samples and image descriptions are sent to the AI provider to produce summaries, correlations and a rough authenticity triage. The evidence is passed as inert data, with instructions kept separate, and the model is told to ignore any instructions found inside evidence. Chat summaries must cite message numbers; points without a source are dropped. All AI output is marked as an automated estimate that needs human review.' },
           { h: 'Results and reports', p: 'The case page shows the facts and the estimates separately. The PDF report (Arabic or English) lists case details, every evidence item with its recorded and re-computed hash, extracted metadata, relationships, conversations, previously generated AI notes in a clearly marked amber section, the chain of custody and the method and its limits. Exporting a report never creates new AI conclusions.' },
           { h: 'Chain of custody', p: 'Every important action appends a record whose hash covers the previous record, so changing or removing an old record breaks the chain from that point. "Run verification" recomputes it and tells you the first broken record.' },
@@ -169,9 +171,9 @@ const Pages = (() => {
         updated: 'من الرفع حتى التقرير - ما الذي يحدث لأدلتك في كل خطوة.',
         steps: [
           { h: 'الرفع والتسجيل', p: 'يُنقل الملف إلى التخزين وتُحسب بصمته SHA-256 في الوقت نفسه. يُنظَّف الاسم، وتُرفض الأنواع التنفيذية، ويجب أن يطابق المحتوى امتداد الملف، وتُقيَّد الحجم. تُكتب البصمة وحدث «رفع» في سلسلة العهدة. ولا يتغير الأصل بعد ذلك أبداً.' },
-          { h: 'الاستخراج (حتمي)', p: 'الصور: بيانات EXIF (الكاميرا ووقت الالتقاط والبرنامج). الملفات النصية وPDF وWord: النص الكامل. ملفات المحادثات (نص واتساب وJSON لتيليجرام وإنستغرام وCSV والمحادثات داخل PDF/Word): تُحلَّل كل رسالة إلى مرسل ووقت ونص، مع موضعها الدقيق في المصدر (سطر أو صفحة أو صف). الصفحات الممسوحة ولقطات الشاشة لا نص قابلاً للاستخراج فيها - لا يوجد OCR في أثر - لذا تُوصف فقط عبر خطوة الرؤية بالذكاء الاصطناعي الاختيارية.' },
+          { h: 'الاستخراج (حتمي)', p: 'الصور: بيانات EXIF (الكاميرا ووقت الالتقاط والبرنامج). الملفات النصية وPDF وWord: النص الكامل. ملفات المحادثات (نص واتساب وJSON لتيليجرام وإنستغرام وCSV والمحادثات داخل PDF/Word): تُحلَّل كل رسالة إلى مرسل ووقت ونص، مع موضعها الدقيق في المصدر (سطر أو صفحة أو صف). الصفحات الممسوحة ولقطات الشاشة لا نص مضمّناً فيها: يمكنك أن تطلب من أثر قراءتها بتقنية OCR (Tesseract المحلي إن وُجد وإلا نموذج الرؤية بالذكاء الاصطناعي). مخرجات OCR تقريبية وموسومة بذلك، وتُحلَّل لقطة المحادثة إلى رسائل عندما يشبه النص محادثة.' },
           { h: 'فحوص السلامة', p: 'قبل تنزيل أي ملف أو تحليله تعيد أثر حساب SHA-256 وتقارنه بالقيمة المسجلة عند الرفع. إذا اختلفتا يُرفض الإجراء ويُسجَّل عدم التطابق. وفي تحليل الذكاء الاصطناعي تُفحص البصمة قبله وبعده وتُسجَّل القيمتان.' },
-          { h: 'ربط الأدلة (حتمي وقابل للتفسير)', p: 'تُربط العناصر عندما تشترك في بصمة متطابقة أو طراز كاميرا واحد أو رقم هاتف/بريد/IBAN/رابط واحد أو طرف محادثة واحد أو صياغة متشابهة (درجة TF-IDF لفظية - كلمات مميزة مشتركة وليس المعنى). كل رابط يعرض سببه الدقيق. ولا تُقارَن إلا القضايا التي أنت عضو فيها.' },
+          { h: 'ربط الأدلة (حتمي وقابل للتفسير)', p: 'تُربط العناصر عندما تشترك في بصمة متطابقة أو طراز كاميرا واحد أو رقم هاتف/بريد/IBAN/رابط واحد أو طرف محادثة واحد أو صياغة متشابهة (درجة TF-IDF لفظية - كلمات مميزة مشتركة وليس المعنى). واختيارياً، إذا ضُبط مزوّد تضمين، يمكنك أيضاً البحث بالمعنى. كل رابط يعرض سببه الدقيق. ولا تُقارَن إلا القضايا التي أنت عضو فيها.' },
           { h: 'التحليل بالذكاء الاصطناعي (اختياري وموسوم)', p: 'إذا ضُبط مفتاح الذكاء الاصطناعي تُرسل النصوص المستخرجة وعينات المحادثات ووصف الصور إلى المزوّد لإنتاج ملخصات وارتباطات وفرز تقريبي للأصالة. تُمرَّر الأدلة كبيانات خاملة منفصلة عن التعليمات، ويُطلب من النموذج تجاهل أي تعليمات توجد داخل الأدلة. وملخصات المحادثات يجب أن تذكر أرقام الرسائل، وتُحذف أي نقطة بلا مصدر. وكل مخرجات الذكاء الاصطناعي موسومة بأنها تقدير آلي يحتاج مراجعة بشرية.' },
           { h: 'النتائج والتقارير', p: 'تعرض صفحة القضية الحقائق والتقديرات منفصلةً. ويتضمن تقرير PDF (عربي أو إنجليزي) بيانات القضية وكل دليل مع بصمته المسجلة والمحسوبة حديثاً، والبيانات الوصفية المستخرجة، والعلاقات، والمحادثات، وملاحظات الذكاء الاصطناعي المولَّدة سابقاً في قسم كهرماني واضح، وسلسلة العهدة، والمنهجية وحدودها. تصدير التقرير لا يولّد استنتاجات ذكاء اصطناعي جديدة.' },
           { h: 'سلسلة العهدة', p: 'كل إجراء مهم يضيف سجلاً تغطي بصمته السجل السابق، فأي تعديل أو حذف لسجل قديم يكسر السلسلة من تلك النقطة. زر «تشغيل التحقق» يعيد حسابها ويخبرك بأول سجل مكسور.' },

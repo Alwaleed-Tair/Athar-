@@ -117,7 +117,15 @@ CREATE TABLE IF NOT EXISTS case_summary (
     generated_at TEXT NOT NULL
 );
 
--- One-time e-mail tokens (verification). Only a SHA-256 of the token is
+-- Optional semantic-search vectors (only when an embeddings provider is configured).
+CREATE TABLE IF NOT EXISTS evidence_embeddings (
+    evidence_id INTEGER PRIMARY KEY REFERENCES evidence(id),
+    model TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    vector_json TEXT NOT NULL
+);
+
+-- One-time e-mail tokens (verification, password reset). Only a SHA-256 of the token is
 -- stored, so a database leak does not leak usable links.
 CREATE TABLE IF NOT EXISTS email_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,6 +229,18 @@ def init_db() -> None:
         _ensure_column(conn, "users", "email_verified", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "users", "token_version", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "updated_at", "TEXT")
+        _ensure_column(conn, "users", "handle", "TEXT")
+        _ensure_column(conn, "users", "deleted_at", "TEXT")
+        _ensure_column(conn, "evidence_text", "source", "TEXT NOT NULL DEFAULT 'FILE'")
+        # editable public username: backfill from the e-mail local part / username, made unique
+        for u in conn.execute("SELECT id, username, email FROM users WHERE handle IS NULL AND deleted_at IS NULL").fetchall():
+            base = ((u["email"] or u["username"]).split("@")[0] or f"user{u['id']}")[:30]
+            cand, n = base, 1
+            while conn.execute("SELECT 1 FROM users WHERE handle = ? COLLATE NOCASE", (cand,)).fetchone():
+                n += 1
+                cand = f"{base[:26]}{n}"
+            conn.execute("UPDATE users SET handle = ? WHERE id = ?", (cand, u["id"]))
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle COLLATE NOCASE) WHERE handle IS NOT NULL")
         conn.execute("UPDATE users SET email = username WHERE email = '' AND instr(username, '@') > 0")
         _ensure_column(conn, "evidence", "title", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "evidence", "description", "TEXT NOT NULL DEFAULT ''")

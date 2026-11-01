@@ -22,11 +22,11 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> dic
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, full_name, role, email, email_verified, token_version "
+            "SELECT id, username, full_name, role, email, email_verified, token_version, deleted_at "
             "FROM users WHERE id = ?",
             (int(payload["sub"]),),
         ).fetchone()
-    if not row:
+    if not row or row["deleted_at"]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
     # A password change/reset bumps token_version, which ends every session
     # issued before it.

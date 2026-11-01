@@ -23,6 +23,46 @@ const Account = (() => {
     });
   }
 
+  function openDeleteAccount() {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="modal-header"><h3 style="display:flex; align-items:center; gap:8px; margin:0;">${UI.icon('trash', '', 20)} <span>${I18n.t('accountDeleteTitle')}</span></h3></div>
+      <p>${I18n.t('accountDeleteConfirm')}</p>
+      <div id="da-msg" aria-live="polite"></div>
+      <form id="da-form" novalidate>
+        <div class="field"><label for="da-pw">${I18n.t('accountCurrentPassword')}</label>
+          <input id="da-pw" type="password" autocomplete="current-password" /></div>
+        <div class="field"><label for="da-word">${I18n.t('accountDeleteType', { word: I18n.t('accountDeleteWord') })}</label>
+          <input id="da-word" type="text" autocomplete="off" /></div>
+        <div class="flex gap-2" style="justify-content:flex-end; margin-top:16px;">
+          <button type="button" class="btn" id="da-cancel">${I18n.t('cancel')}</button>
+          <button type="submit" class="btn btn-danger" id="da-go">${I18n.t('accountDeleteBtn')}</button>
+        </div>
+      </form>`;
+    const { close } = UI.openModal(content);
+    content.querySelector('#da-cancel').onclick = close;
+    content.querySelector('#da-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = content.querySelector('#da-msg');
+      if (content.querySelector('#da-word').value.trim() !== I18n.t('accountDeleteWord')) {
+        msg.innerHTML = `<div class="alert alert-danger">${I18n.t('accountDeleteWordMismatch')}</div>`; return;
+      }
+      const btn = content.querySelector('#da-go');
+      btn.disabled = true;
+      try {
+        await Api.deleteAccount(content.querySelector('#da-pw').value);
+        close();
+        Notifications.stop();
+        Api.setToken(null);
+        State.set({ user: null, route: { name: 'login' } });
+        UI.toast(I18n.t('accountDeleted'));
+      } catch (err) {
+        msg.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(err))}</div>`;
+        btn.disabled = false;
+      }
+    });
+  }
+
   async function renderPage() {
     const wrap = document.createElement('div');
     let me;
@@ -49,6 +89,11 @@ const Account = (() => {
             <label for="acc-name">${I18n.t('accountName')}</label>
             <input id="acc-name" type="text" maxlength="120" autocomplete="name" value="${UI.escapeHtml(me.full_name || '')}" />
             <div class="field-hint-box">${I18n.t('accountNameHint')}</div>
+          </div>
+          <div class="field">
+            <label for="acc-handle">${I18n.t('accountUsername')}</label>
+            <input id="acc-handle" type="text" maxlength="30" dir="ltr" autocapitalize="off" spellcheck="false" value="${UI.escapeHtml(me.handle || '')}" />
+            <div class="field-hint-box">${I18n.t('accountUsernameHint')}</div>
           </div>
           <div class="field">
             <label for="acc-email">${I18n.t('accountEmail')}</label>
@@ -80,8 +125,16 @@ const Account = (() => {
           <div class="mt-3"><button type="submit" class="btn btn-primary" id="pw-save">${UI.icon('key', '', 15)} <span>${I18n.t('accountChangePassword')}</span></button></div>
         </form>
       </div>
+
+      <div class="card mt-4 danger-zone">
+        <h3 style="color:var(--color-danger)">${I18n.t('accountDeleteTitle')}</h3>
+        <p class="text-sm">${I18n.t('accountDeleteBody')}</p>
+        <ul class="text-sm"><li>${I18n.t('accountDeleteCases')}</li><li>${I18n.t('accountDeleteData')}</li><li>${I18n.t('accountDeleteAudit')}</li></ul>
+        <button type="button" class="btn btn-danger" id="acc-delete">${UI.icon('trash', '', 15)} <span>${I18n.t('accountDeleteBtn')}</span></button>
+      </div>
     `;
     wireToggles(wrap);
+    wrap.querySelector('#acc-delete').onclick = () => openDeleteAccount();
     Auth.wirePasswordChecklist(wrap, wrap.querySelector('#pw-new'));
 
     // --- profile -------------------------------------------------------------
@@ -93,7 +146,13 @@ const Account = (() => {
       const btn = wrap.querySelector('#profile-save');
       btn.disabled = true;
       try {
-        const user = await Api.updateProfile(name);
+        const handle = wrap.querySelector('#acc-handle').value.trim();
+        if (!/^[\w.\-]{3,30}$/.test(handle)) {
+          msg.innerHTML = `<div class="alert alert-danger">${I18n.t('err_INVALID_HANDLE')}</div>`;
+          btn.disabled = false;
+          return;
+        }
+        const user = await Api.updateProfile(name, handle);
         State.set({ user: { ...State.get().user, ...user } });
         UI.toast(I18n.t('accountSaved'));
       } catch (err) {

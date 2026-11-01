@@ -156,6 +156,7 @@ def delete_derived_data(conn, evidence_id: int, case_id: int) -> None:
     conn.execute("DELETE FROM evidence_analysis WHERE evidence_id = ?", (evidence_id,))
     conn.execute("DELETE FROM evidence_authenticity WHERE evidence_id = ?", (evidence_id,))
     conn.execute("DELETE FROM evidence_text WHERE evidence_id = ?", (evidence_id,))
+    conn.execute("DELETE FROM evidence_embeddings WHERE evidence_id = ?", (evidence_id,))
     conn.execute("DELETE FROM chat_messages WHERE evidence_id = ?", (evidence_id,))
     conn.execute("DELETE FROM conversations WHERE evidence_id = ?", (evidence_id,))
     # Other items' AI correlations and the case summary may reference this

@@ -260,6 +260,17 @@ const Evidence = (() => {
       `
       : '';
 
+    const ocrBlock = (o) => o
+      ? `<div class="ai-tag">${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('ocrApprox', { method: o.method === 'OCR_TESSERACT' ? 'Tesseract' : I18n.t('ocrMethodAi') })}</span></div>
+         <pre class="ocr-text" dir="auto">${UI.escapeHtml(o.text)}</pre>` : '';
+    const ocrSectionHtml = isImage
+      ? `
+        <h4 class="mt-4">${I18n.t('ocrTitle')}</h4>
+        <p class="text-muted text-xs">${I18n.t('ocrHint')}</p>
+        <button class="btn btn-sm" id="ev-ocr">${UI.icon('fileText', '', 14)} <span>${ev.ocr ? I18n.t('ocrRerun') : I18n.t('ocrRun')}</span></button>
+        <div id="ev-ocr-result" class="mt-3" aria-live="polite">${ocrBlock(ev.ocr)}</div>`
+      : '';
+
     const detailsHtml = ev.can_manage
       ? `
         <form id="ev-edit-form" novalidate>
@@ -325,6 +336,7 @@ const Evidence = (() => {
         ${hasCached ? renderAnalysisResult(ev.cached_analysis, ev.cached_analysis_at) : ''}
       </div>
       ${authSectionHtml}
+      ${ocrSectionHtml}
 
       ${ev.conversation ? `<h4 class="mt-4" style="display:flex; align-items:center; gap:8px;">${UI.icon('message', '', 18)} <span>${I18n.t('convTitle')}</span></h4><div id="ev-conversation"></div>` : ''}
 
@@ -432,6 +444,31 @@ const Evidence = (() => {
         }
         authBtn.disabled = false;
         authBtn.textContent = I18n.t('reRunAuthCheck');
+      };
+    }
+
+    // --- OCR -------------------------------------------------------------------
+    const ocrBtn = content.querySelector('#ev-ocr');
+    if (ocrBtn) {
+      ocrBtn.onclick = async () => {
+        const box = content.querySelector('#ev-ocr-result');
+        ocrBtn.disabled = true;
+        box.innerHTML = UI.spinner(I18n.t('ocrRunning'));
+        try {
+          const r = await Api.runOcr(ev.id);
+          if (r.status === 'SUCCESS') {
+            changed = true;
+            if (r.conversation) { close(); openInspectModal(ev.id, onChange); return; }
+            box.innerHTML = ocrBlock({ method: 'OCR_' + r.method, text: r.text });
+          } else if (r.status === 'NO_TEXT') {
+            box.innerHTML = `<div class="alert alert-warning">${I18n.t('ocrNoText')}</div>`;
+          } else {
+            box.innerHTML = `<div class="alert alert-warning">${UI.escapeHtml((I18n.getLang() === 'ar' ? r.message_ar : r.message_en) || I18n.t('genericError'))}</div>`;
+          }
+        } catch (err) {
+          box.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(err))}</div>`;
+        }
+        ocrBtn.disabled = false;
       };
     }
 

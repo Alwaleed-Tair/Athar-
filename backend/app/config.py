@@ -135,3 +135,16 @@ EVIDENCE_RETENTION_DAYS = int(os.environ.get("ATHAR_EVIDENCE_RETENTION_DAYS", "3
 # Conversation parsing limits
 MAX_CHAT_MESSAGES = 100_000
 MAX_FULLTEXT_CHARS = 2_000_000
+
+# --- Optional semantic search (embeddings) -------------------------------
+# Any OpenAI-compatible /embeddings endpoint. Disabled unless a key is set.
+# When used, text of the user's own evidence is sent to this provider.
+EMBED_KEY = os.environ.get("ATHAR_EMBED_KEY", "")
+EMBED_URL = os.environ.get("ATHAR_EMBED_URL", "https://api.openai.com/v1/embeddings")
+EMBED_MODEL = os.environ.get("ATHAR_EMBED_MODEL", "text-embedding-3-small")
+SEMANTIC_MIN_SCORE = float(os.environ.get("ATHAR_SEMANTIC_MIN_SCORE", "0.35"))
+
+# --- Optional OCR -----------------------------------------------------------
+# Local Tesseract is used when the `tesseract` binary exists (languages from
+# OCR_LANGS); otherwise OCR falls back to the AI vision model if a key is set.
+OCR_LANGS = os.environ.get("ATHAR_OCR_LANGS", "ara+eng")

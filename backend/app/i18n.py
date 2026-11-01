@@ -86,12 +86,24 @@ TEMPLATES = {
         "ar": "فعّل المسؤول {actor_username} حساب {target_username} يدوياً",
     },
     "PROFILE_UPDATED": {
-        "en": "{username} updated their profile name to \"{full_name}\"",
-        "ar": "حدّث {username} اسمه في الملف الشخصي إلى \"{full_name}\"",
+        "en": "{username} updated their profile (name \"{full_name}\")",
+        "ar": "حدّث {username} ملفه الشخصي (الاسم \"{full_name}\")",
     },
     "PASSWORD_CHANGED": {
         "en": "{username} changed their password",
         "ar": "غيّر {username} كلمة المرور",
+    },
+    "PASSWORD_RESET_BY_EMAIL": {
+        "en": "{username} reset their password using an e-mailed link",
+        "ar": "أعاد {username} تعيين كلمة المرور عبر رابط أُرسل إلى بريده",
+    },
+    "ACCOUNT_DELETED": {
+        "en": "{username} deleted their account (case handling: {case_action})",
+        "ar": "حذف {username} حسابه (التعامل مع القضية: {case_action})",
+    },
+    "EVIDENCE_OCR_RUN": {
+        "en": "{username} ran text extraction (OCR, {method}) on \"{filename}\"",
+        "ar": "شغّل {username} استخراج النص (OCR، {method}) على \"{filename}\"",
     },
     "EVIDENCE_UPDATED": {
         "en": "{username} edited the details of \"{filename}\" ({fields})",
