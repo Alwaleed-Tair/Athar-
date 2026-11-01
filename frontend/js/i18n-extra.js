@@ -2,6 +2,7 @@
 // edit/delete, conversations, search, reports, contact, legal pages.
 // Loaded after i18n.js; merges into the same dictionary.
 I18n.extend('en', {
+  err_BLOCKED_TYPE: 'This file type (executables and scripts) is not accepted as evidence.', err_CONTENT_MISMATCH: 'The file content does not match its extension, or it is an executable. Upload rejected.', err_EMPTY_FILE: 'The file is empty.',
   // v14
   err_INVALID_HANDLE: 'The username must be 3-30 characters: letters, digits, dot, dash or underscore, no spaces.',
   err_HANDLE_TAKEN: 'This username is already taken.', err_LAST_ADMIN: 'You are the last administrator; create another admin before deleting this account.',
@@ -159,6 +160,7 @@ I18n.extend('en', {
 });
 
 I18n.extend('ar', {
+  err_BLOCKED_TYPE: 'نوع الملف هذا (الملفات التنفيذية والسكربتات) غير مقبول كدليل.', err_CONTENT_MISMATCH: 'محتوى الملف لا يطابق امتداده أو أنه ملف تنفيذي. تم رفض الرفع.', err_EMPTY_FILE: 'الملف فارغ.',
   // v14
   err_INVALID_HANDLE: 'اسم المستخدم من 3 إلى 30 حرفاً: حروف وأرقام ونقطة وشرطة وشرطة سفلية، دون مسافات.',
   err_HANDLE_TAKEN: 'اسم المستخدم مستخدم بالفعل.', err_LAST_ADMIN: 'أنت آخر مسؤول؛ أنشئ مسؤولاً آخر قبل حذف هذا الحساب.',

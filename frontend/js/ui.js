@@ -172,6 +172,12 @@ const UI = (() => {
     if (!err) return I18n.t('genericError');
     const key = err.code ? 'err_' + err.code : '';
     if (key && I18n.has(key)) return I18n.t(key, { seconds: err.retryAfter || 60 });
+    // Plain-English messages produced by the upload endpoint -> localized
+    const m = String(err.message || '');
+    if (/^File extension/.test(m)) return I18n.t('err_BLOCKED_TYPE');
+    if (/does not match its extension/.test(m)) return I18n.t('err_CONTENT_MISMATCH');
+    if (/^The file is empty/.test(m)) return I18n.t('err_EMPTY_FILE');
+    if (/exceeds max upload size/.test(m)) return I18n.t('err_TOO_LARGE');
     if (err.status === 401) return I18n.t('invalidCredentials');
     if (err.status === 403) return I18n.t('err_NOT_ALLOWED');
     if (err.status === 413) return I18n.t('err_TOO_LARGE');
