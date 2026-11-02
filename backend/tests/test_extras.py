@@ -230,13 +230,13 @@ def test_ocr_retries_when_reasoning_eats_the_budget(client, make_user, monkeypat
 
     def fake(prompt, mime, b64, max_tokens=600):
         budgets.append(max_tokens)
-        return ("", "length") if max_tokens < 4000 else ("أحمد: مرحبا\nخالد: أهلاً", "stop")
+        return ("", "length") if max_tokens < 4000 else ("أحمد: مرحبا\nخالد: أهلاً\nأحمد: وينك", "stop")
 
     monkeypatch.setattr(analysis, "_call_vision_model", fake)
     a = make_user("Alice A"); cid = new_case(client, a["headers"])
     ev = upload(client, a["headers"], cid, "shot.png", _png()).json()
     r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
-    assert r["status"] == "SUCCESS" and budgets == [2000, 4000] and r["conversation"]["message_count"] == 2
+    assert r["status"] == "SUCCESS" and budgets == [2000, 4000] and r["conversation"]["message_count"] == 3
 
 
 def test_ocr_distinguishes_blocked_exhausted_and_no_text(client, make_user, monkeypatch):
