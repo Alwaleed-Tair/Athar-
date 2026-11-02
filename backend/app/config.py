@@ -148,3 +148,13 @@ SEMANTIC_MIN_SCORE = float(os.environ.get("ATHAR_SEMANTIC_MIN_SCORE", "0.35"))
 # Local Tesseract is used when the `tesseract` binary exists (languages from
 # OCR_LANGS); otherwise OCR falls back to the AI vision model if a key is set.
 OCR_LANGS = os.environ.get("ATHAR_OCR_LANGS", "ara+eng")
+
+# --- Separate provider for IMAGE features (OCR, image descriptions, authenticity) ---
+# Reading images needs a vision-capable model. The text provider (DeepSeek by
+# default) may not offer one, so images can use another OpenAI-compatible
+# endpoint. Each setting falls back to the text-provider value when empty.
+#   ATHAR_VISION_URL   e.g. https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+#   ATHAR_VISION_KEY   the key for that provider
+#   ATHAR_AI_VISION_MODEL  the vision-capable model id at that provider
+VISION_URL = os.environ.get("ATHAR_VISION_URL", "")
+VISION_KEY = os.environ.get("ATHAR_VISION_KEY", "")

@@ -94,6 +94,10 @@ def _safe_reason(exc) -> str:
         return "the AI provider rejected the service credentials"
     if code == 429:
         return "the AI provider rate limit was reached, try again later"
+    if code == 404:
+        return "the configured model or endpoint was not found at the AI provider"
+    if code in (400, 422):
+        return "the AI provider rejected the request (the model may not support this kind of input)"
     if isinstance(code, int) and code >= 500:
         return "the AI provider is temporarily unavailable"
     if isinstance(exc, TimeoutError):
@@ -138,6 +142,22 @@ def extract_exif(file_path: str) -> tuple[str, dict]:
         # UnidentifiedImageError subclasses OSError/Exception; any failure
         # to open as an image is reported as FAILED, not silently ignored.
         return "FAILED", {"error": "unreadable or unsupported image"}
+
+
+def vision_enabled() -> bool:
+    """Image features need a key: the dedicated vision key if set, else the text key."""
+    return bool(config.VISION_KEY or config.ATHAR_AI_KEY)
+
+
+def _vision_endpoint() -> tuple[str, str]:
+    return (config.VISION_URL or config.ATHAR_AI_URL), (config.VISION_KEY or config.ATHAR_AI_KEY)
+
+
+def _log_provider_error(kind: str, exc) -> None:
+    """Server log only (never shown to users, never contains the key): which call
+    failed and with what HTTP status, so a misconfigured model/URL is diagnosable."""
+    code = getattr(exc, "code", None)
+    print(f"[ATHAR] AI provider error ({kind}): {type(exc).__name__}" + (f" HTTP {code}" if code else ""))
 
 
 def ai_enabled() -> bool:
@@ -322,8 +342,8 @@ def _call_vision_model(prompt: str, mime: str, b64: str, max_tokens: int = 600):
     goes to the actual answer -- this is far more reliable than chasing
     an ever-larger max_tokens value.
     """
-    body = json.dumps(
-        {
+    url, key = _vision_endpoint()
+    payload = {
             "model": config.ATHAR_AI_VISION_MODEL,
             "messages": [
                 {"role": "system", "content": VISION_GUARD},
@@ -336,21 +356,26 @@ def _call_vision_model(prompt: str, mime: str, b64: str, max_tokens: int = 600):
                 }
             ],
             "max_tokens": max_tokens,
-            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
-        }
-    ).encode("utf-8")
+    }
+    if "deepseek" in url:   # DeepSeek-only switch; other providers reject unknown fields
+        payload["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+    body = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(
-        config.ATHAR_AI_URL,
+        url,
         data=body,
         method="POST",
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {config.ATHAR_AI_KEY}",
+            "Authorization": f"Bearer {key}",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        _log_provider_error("vision", exc)
+        raise
     choice = data["choices"][0]
     text = (choice.get("message", {}).get("content") or "").strip()
     finish_reason = choice.get("finish_reason")
@@ -369,7 +394,7 @@ def describe_image(file_path: str, ext: str) -> Optional[str]:
     reason -- callers must treat that as "no visual description
     available", not an error.
     """
-    if not ai_enabled():
+    if not vision_enabled():
         return None
 
     encoded = _encode_image_for_vision(file_path)
@@ -904,7 +929,7 @@ def assess_image_authenticity(file_path: str, lang: str = "en") -> dict:
     assessment is ever fabricated in that case. Returns {"status":
     "NOT_APPLICABLE"} for a file that isn't an image at all.
     """
-    if not ai_enabled():
+    if not vision_enabled():
         return {
             "status": "DISABLED",
             "message_en": "AI analysis is disabled: no ATHAR_AI_KEY configured.",
@@ -1153,7 +1178,7 @@ def ocr_image(file_path: str) -> dict:
             return {"status": "FAILED", "method": "TESSERACT",
                     "message_en": "Text extraction failed.", "message_ar": "فشل استخراج النص."}
 
-    if not ai_enabled():
+    if not vision_enabled():
         return {
             "status": "DISABLED", "method": None,
             "message_en": "OCR is not available: Tesseract is not installed on the server and no AI key is configured.",

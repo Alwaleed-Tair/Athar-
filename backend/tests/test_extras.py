@@ -185,3 +185,39 @@ def test_audit_messages_are_fully_localized(client, make_user):
         assert not any(c.isdigit() and text[i + 1:i + 4] == "-12" for i, c in enumerate(text) if i + 4 < len(text))  # no ISO date left
     ar = " ".join(r["message"] for r in client.get(f"/api/cases/{cid}/audit?lang=ar", headers=a["headers"]).json())
     assert "عدد الرسائل: 2" in ar and "سليمة" in ar and "ديسمبر" in ar or "يناير" in ar or "فبراير" in ar or "مارس" in ar
+
+
+def test_vision_uses_dedicated_provider_and_hides_deepseek_only_fields(client, make_user, monkeypatch):
+    import json as _json
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "text-key")
+    monkeypatch.setattr(config, "VISION_KEY", "vision-key")
+    monkeypatch.setattr(config, "VISION_URL", "https://vision.example.com/v1/chat/completions")
+    seen = {}
+
+    class R:
+        def __init__(s, body): s.b = body
+        def read(s): return s.b
+        def __enter__(s): return s
+        def __exit__(s, *a): return False
+
+    def fake(req, timeout=0):
+        seen["url"] = req.full_url
+        seen["auth"] = req.headers.get("Authorization")
+        seen["body"] = _json.loads(req.data.decode())
+        return R(_json.dumps({"choices": [{"message": {"content": "نص من الصورة"}, "finish_reason": "stop"}]}).encode())
+
+    monkeypatch.setattr(analysis.urllib.request, "urlopen", fake)
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "s.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "SUCCESS" and r["text"] == "نص من الصورة"
+    assert seen["url"] == "https://vision.example.com/v1/chat/completions" and seen["auth"] == "Bearer vision-key"
+    assert "extra_body" not in seen["body"]            # only sent to DeepSeek endpoints
+
+
+def test_vision_error_categories_are_specific_but_safe(monkeypatch):
+    import urllib.error
+    for code, needle in ((404, "model or endpoint was not found"), (400, "may not support"), (401, "credentials")):
+        exc = urllib.error.HTTPError("http://x", code, "x", {}, None)
+        assert needle in analysis._safe_reason(exc)

@@ -62,6 +62,10 @@ def _startup():
         print("[ATHAR] WARNING: the bootstrap admin password is still the default 'ChangeMe123!'. Change it.")
     if not config.ATHAR_AI_KEY:
         print("[ATHAR] Note: ATHAR_AI_KEY is not set - AI evidence analysis is disabled.")
+    if config.ATHAR_AI_KEY or config.VISION_KEY:
+        vurl = config.VISION_URL or config.ATHAR_AI_URL
+        print(f"[ATHAR] AI: text via {config.ATHAR_AI_URL.split('/')[2]} ({config.ATHAR_AI_MODEL}); "
+              f"images via {vurl.split('/')[2]} ({config.ATHAR_AI_VISION_MODEL})")
     if mailer.is_configured():
         print("[ATHAR] E-mail: SMTP configured.")
     elif config.MAIL_CONSOLE:
