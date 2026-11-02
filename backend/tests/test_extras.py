@@ -221,3 +221,29 @@ def test_vision_error_categories_are_specific_but_safe(monkeypatch):
     for code, needle in ((404, "model or endpoint was not found"), (400, "may not support"), (401, "credentials")):
         exc = urllib.error.HTTPError("http://x", code, "x", {}, None)
         assert needle in analysis._safe_reason(exc)
+
+
+def test_ocr_retries_when_reasoning_eats_the_budget(client, make_user, monkeypatch):
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "dummy")
+    budgets = []
+
+    def fake(prompt, mime, b64, max_tokens=600):
+        budgets.append(max_tokens)
+        return ("", "length") if max_tokens < 4000 else ("أحمد: مرحبا\nخالد: أهلاً", "stop")
+
+    monkeypatch.setattr(analysis, "_call_vision_model", fake)
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "shot.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "SUCCESS" and budgets == [2000, 4000] and r["conversation"]["message_count"] == 2
+
+
+def test_ocr_distinguishes_blocked_exhausted_and_no_text(client, make_user, monkeypatch):
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "dummy")
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "shot.png", _png()).json()
+    for answer, expected in ((("", "content_filter"), "FAILED"), (("", "length"), "FAILED"), (("", "stop"), "NO_TEXT"), (("NO_TEXT", "stop"), "NO_TEXT")):
+        monkeypatch.setattr(analysis, "_call_vision_model", lambda *a_, _ans=answer, **k: _ans)
+        assert client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()["status"] == expected

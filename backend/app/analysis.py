@@ -1195,13 +1195,35 @@ def ocr_image(file_path: str) -> dict:
         "'Sender: message' (add the time before the sender if it is visible, like '[10:15] Sender: message'). "
         "Output only the transcription, no commentary. If there is no readable text, output exactly NO_TEXT."
     )
-    try:
-        text, _fr = _call_vision_model(prompt, mime, b64, max_tokens=2000)
-    except Exception as exc:
-        return {"status": "FAILED", "method": "AI_VISION",
-                "message_en": f"Text extraction failed: {_safe_reason(exc)}.",
-                "message_ar": "فشل استخراج النص: تعذّر الحصول على رد من مزوّد الخدمة."}
-    text = (text or "").strip()
-    if not text or text.upper().startswith("NO_TEXT"):
+    # Reasoning-capable vision models can spend the whole token budget thinking and
+    # return EMPTY content (finish_reason "length"). Retry with a larger budget
+    # instead of reporting "no text"; an empty answer is only trusted as "no text"
+    # when the model stopped normally.
+    text, fr = "", None
+    for budget in (2000, 4000, 8000):
+        try:
+            text, fr = _call_vision_model(prompt, mime, b64, max_tokens=budget)
+        except Exception as exc:
+            return {"status": "FAILED", "method": "AI_VISION",
+                    "message_en": f"Text extraction failed: {_safe_reason(exc)}.",
+                    "message_ar": "فشل استخراج النص: تعذّر الحصول على رد من مزوّد الخدمة."}
+        text = (text or "").strip()
+        if text:
+            break
+        print(f"[ATHAR] OCR vision returned an empty answer (finish_reason={fr}, max_tokens={budget})")
+        if fr != "length":
+            break
+    if not text:
+        if fr == "content_filter":
+            return {"status": "FAILED", "method": "AI_VISION",
+                    "message_en": "The AI provider's content filter blocked reading this image.",
+                    "message_ar": "منع نظام تصفية المحتوى عند مزوّد الذكاء الاصطناعي قراءة هذه الصورة."}
+        if fr == "length":
+            return {"status": "FAILED", "method": "AI_VISION",
+                    "message_en": "The model used its whole budget without producing text for this image. Try again, or use a model that does not hide its reasoning.",
+                    "message_ar": "استهلك النموذج كل ميزانيته دون أن يكتب نصاً لهذه الصورة. أعد المحاولة أو استخدم نموذجاً لا يخفي استدلاله."}
+        return {"status": "NO_TEXT", "method": "AI_VISION", "text": ""}
+    if text.upper().startswith("NO_TEXT"):
+        print("[ATHAR] OCR vision answered NO_TEXT for an image")
         return {"status": "NO_TEXT", "method": "AI_VISION", "text": ""}
     return {"status": "SUCCESS", "method": "AI_VISION", "text": text[:config.MAX_FULLTEXT_CHARS]}
