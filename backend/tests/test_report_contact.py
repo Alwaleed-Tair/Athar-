@@ -80,3 +80,30 @@ def test_contact_rate_limited(client):
     body = {"name": "Spam Bot", "email": "spam@gmail.com", "category": "OTHER", "subject": "hello there", "message": "this is a long enough message"}
     codes = [client.post("/api/contact", json=body).status_code for _ in range(7)]
     assert codes[:5] == [201] * 5 and codes[5] == 429
+
+
+def test_report_download_link_flow(client, make_user, monkeypatch):
+    from app.routers import reports as rp
+    a, b = make_user("Alice A"), make_user("Bob B")
+    cid = new_case(client, a["headers"], "Link case")
+    upload(client, a["headers"], cid, "a.txt", b"link evidence text")
+    assert client.post(f"/api/cases/{cid}/report-link", headers=b["headers"]).status_code == 404      # outsider
+    link = client.post(f"/api/cases/{cid}/report-link", params={"lang": "ar"}, headers=a["headers"]).json()
+    # a plain tap: NO Authorization header
+    r1 = client.get(link["url"], params={"inline": "true"})
+    assert r1.status_code == 200 and r1.content.startswith(b"%PDF") and r1.headers["content-disposition"].startswith("inline")
+    r2 = client.get(link["url"])                                             # phones request again; still valid
+    assert r2.status_code == 200 and r2.headers["content-disposition"].startswith("attachment") and r2.content == r1.content
+    audit = client.get(f"/api/cases/{cid}/audit?lang=en", headers=a["headers"]).json()
+    assert sum(1 for x in audit if x["action"] == "REPORT_GENERATED") == 1     # logged once per link
+    assert client.get("/api/report-download/not-a-real-token").status_code == 404
+    # link dies when the user loses access
+    client.post(f"/api/cases/{cid}/members", headers=a["headers"], json={"email": b["email"]})
+    l2 = client.post(f"/api/cases/{cid}/report-link", headers=b["headers"]).json()
+    client.delete(f"/api/cases/{cid}/members/{b['id']}", headers=a["headers"])
+    assert client.get(l2["url"]).status_code == 404
+    # and expires
+    l3 = client.post(f"/api/cases/{cid}/report-link", headers=a["headers"]).json()
+    for v in rp._LINKS.values():
+        v["exp"] = 0
+    assert client.get(l3["url"]).status_code == 404

@@ -407,8 +407,28 @@ const Cases = (() => {
       reportBtn.disabled = true;
       reportBtn.innerHTML = `<span class="spinner"></span> <span>${I18n.t('reportGenerating')}</span>`;
       try {
-        await Api.downloadReport(caseId);
-        UI.toast(I18n.t('reportReady'));
+        // A short-lived plain link: works as a normal tap/navigation, which phones
+        // handle far better than a file fetched by script and saved as a blob.
+        const { url } = await Api.createReportLink(caseId);
+        const isPhone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
+        if (isPhone) {
+          const content = document.createElement('div');
+          content.innerHTML = `
+            <div class="modal-header"><h3 style="display:flex; align-items:center; gap:8px; margin:0;">${UI.icon('fileText', '', 20)} <span>${I18n.t('reportReadyTitle')}</span></h3></div>
+            <p class="text-sm">${I18n.t('reportReadyBody')}</p>
+            <div class="flex gap-2" style="flex-direction:column;">
+              <a class="btn btn-primary btn-neon" id="rl-open" href="${url}?inline=true" target="_blank" rel="noopener" style="justify-content:center; text-decoration:none;">${UI.icon('eye', '', 16)} <span>${I18n.t('reportOpen')}</span></a>
+              <a class="btn" id="rl-save" href="${url}" style="justify-content:center; text-decoration:none;">${UI.icon('download', '', 16)} <span>${I18n.t('reportSave')}</span></a>
+            </div>
+            <p class="text-muted text-xs mt-3">${I18n.t('reportLinkNote')}</p>
+            <div class="flex gap-2" style="justify-content:flex-end; margin-top:12px;"><button type="button" class="btn" id="rl-close">${I18n.t('close')}</button></div>`;
+          const { close } = UI.openModal(content);
+          content.querySelector('#rl-close').onclick = close;
+          content.querySelector('#rl-open').addEventListener('click', () => setTimeout(close, 400));
+        } else {
+          window.location.href = url;   // desktop: the server sends it as a download
+          UI.toast(I18n.t('reportReady'));
+        }
       } catch (err) {
         UI.toast(UI.errorMessage(err), 'error');
       }

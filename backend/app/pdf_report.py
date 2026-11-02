@@ -47,6 +47,9 @@ class Pdf:
         self.total = total_pages
         self.buf = io.BytesIO()
         self.c = canvas.Canvas(self.buf, pagesize=A4)
+        self.c.setTitle("ATHAR - Digital Evidence Report")
+        self.c.setAuthor("ATHAR")
+        self.c.setSubject("Digital evidence report")
         self.W, self.H = A4
         self.M = 18 * mm
         self.top = self.H - 20 * mm

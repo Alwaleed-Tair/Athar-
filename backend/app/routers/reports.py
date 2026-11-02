@@ -13,10 +13,13 @@ Rules the report follows:
 """
 import hashlib
 import json
+import secrets
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from .. import analysis, audit, chats, config, i18n, integrity, relations
@@ -424,3 +427,66 @@ def case_report(case_id: int, user: dict = Depends(require_case_member), lang: s
         headers={"Content-Disposition": f'attachment; filename="ATHAR-report-{meta["identifier"]}-{stamp}.pdf"',
                  "Cache-Control": "no-store"},
     )
+
+
+# --- Short-lived download links ------------------------------------------------
+# Phones (iPhone Safari, in-app browsers) often fail to save a PDF that the page
+# fetched with an Authorization header and handed over as a blob. So the page asks
+# for a link that works as a plain tap/navigation: a random token, valid for a few
+# minutes, bound to the user, the case and the language. Membership is checked
+# again when the link is used, and the report is logged once per link.
+_LINKS: dict[str, dict] = {}
+_LINKS_LOCK = threading.Lock()
+LINK_TTL = 180
+
+
+def _purge_links(now: float) -> None:
+    for k in [k for k, v in _LINKS.items() if v["exp"] < now]:
+        _LINKS.pop(k, None)
+
+
+@router.post("/cases/{case_id}/report-link")
+def report_link(case_id: int, user: dict = Depends(require_case_member), lang: str = Query(default="en")):
+    token = secrets.token_urlsafe(24)
+    now = time.time()
+    with _LINKS_LOCK:
+        _purge_links(now)
+        _LINKS[token] = {"user_id": user["id"], "case_id": case_id, "lang": lang if lang in T else "en",
+                         "exp": now + LINK_TTL, "pdf": None, "meta": None, "logged": False}
+    return {"url": f"/api/report-download/{token}", "expires_in": LINK_TTL}
+
+
+@router.api_route("/report-download/{token}", methods=["GET", "HEAD"])
+def report_download(token: str, inline: bool = Query(default=False)):
+    now = time.time()
+    with _LINKS_LOCK:
+        _purge_links(now)
+        entry = _LINKS.get(token)
+    if not entry:
+        raise HTTPException(status_code=404, detail="LINK_EXPIRED")
+    with get_conn() as conn:
+        u = conn.execute("SELECT id, username, full_name, role FROM users WHERE id = ? AND deleted_at IS NULL",
+                         (entry["user_id"],)).fetchone()
+        member = conn.execute(
+            "SELECT 1 FROM case_members m JOIN cases c ON c.id = m.case_id "
+            "WHERE m.case_id = ? AND m.user_id = ? AND c.status != 'DELETED'",
+            (entry["case_id"], entry["user_id"])).fetchone()
+        if not u or not member:
+            raise HTTPException(status_code=404, detail="LINK_EXPIRED")
+        if entry["pdf"] is None:                      # phones re-request the URL; build it once
+            user = {"id": u["id"], "username": u["username"], "full_name": u["full_name"] or ""}
+            entry["pdf"], entry["meta"] = build_report(conn, user, entry["case_id"], entry["lang"])
+    meta = entry["meta"]
+    if not entry["logged"]:
+        entry["logged"] = True
+        audit.append_event(
+            "REPORT_GENERATED", actor_id=entry["user_id"], case_id=entry["case_id"],
+            params={"username": u["username"], "case_name": meta["case_name"],
+                    "evidence_count": meta["evidence_count"], "intact": meta["intact"],
+                    "fingerprint": meta["fingerprint"]})
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    disp = "inline" if inline else "attachment"
+    return Response(
+        content=entry["pdf"], media_type="application/pdf",
+        headers={"Content-Disposition": f'{disp}; filename="ATHAR-report-{meta["identifier"]}-{stamp}.pdf"',
+                 "Cache-Control": "private, max-age=0", "X-Content-Type-Options": "nosniff"})

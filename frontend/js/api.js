@@ -126,6 +126,7 @@ const Api = (() => {
       return request('GET', `/api/search?${p.toString()}`);
     },
     getRelated: (caseId) => request('GET', `/api/cases/${caseId}/related`),
+    createReportLink: (caseId) => request('POST', `/api/cases/${caseId}/report-link`),
     downloadReport: (caseId) => saveBlob(`/api/cases/${caseId}/report`, 'athar-report.pdf'),
 
     listCases: (search = '', status = '', priority = '') => {
