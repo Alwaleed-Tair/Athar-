@@ -354,3 +354,60 @@ def test_search_finds_exif_device(client, make_user):
     upload(client, a["headers"], cid, "p.jpg", buf.getvalue())
     r = client.get("/api/search", headers=a["headers"], params={"q": "iphone", "case_id": cid}).json()
     assert r["evidence"] and "DEVICE" in r["evidence"][0]["matched_in"]
+
+
+def test_ai_map_is_cached_until_evidence_changes(client, make_user, monkeypatch):
+    from app import analysis
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "dummy")
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=0):
+        calls["n"] += 1
+        edge = {"edges": [{"item_a": 1, "item_b": 2, "type": "CONTENT_REFERENCE", "explanation": f"run {calls['n']}"}]}
+
+        class R:
+            def read(s):
+                return json.dumps({"choices": [{"message": {"content": json.dumps(edge)}}]}).encode()
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+        return R()
+
+    monkeypatch.setattr(analysis.urllib.request, "urlopen", fake_urlopen)
+    a = make_user("Alice A")
+    cid = new_case(client, a["headers"])
+    e1 = upload(client, a["headers"], cid, "x1.txt", b"first evidence body text").json()
+    e2 = upload(client, a["headers"], cid, "x2.txt", b"second evidence body text").json()
+
+    def ai_edges(**params):
+        d = client.get(f"/api/cases/{cid}/evidence-map", headers=a["headers"], params={"lang": "en", **params}).json()
+        return d, [e for e in d["edges"] if e["ai_estimated"]]
+
+    # make the fake edge reference the real ids
+    orig = fake_urlopen
+    def with_ids(req, timeout=0):
+        r = orig(req, timeout)
+        body = json.loads(r.read())
+        inner = json.loads(body["choices"][0]["message"]["content"])
+        inner["edges"][0]["item_a"], inner["edges"][0]["item_b"] = e1["id"], e2["id"]
+        body["choices"][0]["message"]["content"] = json.dumps(inner)
+        class R2:
+            def read(s): return json.dumps(body).encode()
+            def __enter__(s): return s
+            def __exit__(s, *x): return False
+        return R2()
+    monkeypatch.setattr(analysis.urllib.request, "urlopen", with_ids)
+
+    d1, ed1 = ai_edges()
+    d2, ed2 = ai_edges()
+    d3, ed3 = ai_edges()
+    assert calls["n"] == 1 and d1["ai_cached"] is False and d2["ai_cached"] and d3["ai_cached"]
+    assert ed1 == ed2 == ed3 and len(ed1) == 1                       # identical every time it is opened
+    d4, _ = ai_edges(refresh="true")                                    # explicit refresh calls the AI again
+    assert calls["n"] == 2 and d4["ai_cached"] is False
+    client.patch(f"/api/evidence/{e1['id']}", headers=a["headers"], json={"title": "renamed"})   # evidence changed
+    d5, _ = ai_edges()
+    assert calls["n"] == 3 and d5["ai_cached"] is False
+    ai_edges()
+    assert calls["n"] == 3                                              # cached again
+    client.get(f"/api/cases/{cid}/evidence-map", headers=a["headers"], params={"lang": "ar"})
+    assert calls["n"] == 4                                              # language change regenerates (text is in that language)

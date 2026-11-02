@@ -143,7 +143,7 @@ const Api = (() => {
     listMembers: (caseId) => request('GET', `/api/cases/${caseId}/members`),
     caseAudit: (caseId) => request('GET', `/api/cases/${caseId}/audit`),
     verifyCaseChain: (caseId) => request('GET', `/api/cases/${caseId}/verify`),
-    getEvidenceMap: (caseId) => request('GET', `/api/cases/${caseId}/evidence-map`),
+    getEvidenceMap: (caseId, refresh = false) => request('GET', `/api/cases/${caseId}/evidence-map${refresh ? '?refresh=true' : ''}`),
     getCrossCaseAlerts: (caseId) => request('GET', `/api/cases/${caseId}/cross-case-alerts`),
     deleteCase: (caseId) => request('DELETE', `/api/cases/${caseId}`),
     getCaseSummary: (caseId) => request('GET', `/api/cases/${caseId}/summary`),

@@ -2,6 +2,7 @@
 // edit/delete, conversations, search, reports, contact, legal pages.
 // Loaded after i18n.js; merges into the same dictionary.
 I18n.extend('en', {
+  mapAiSavedAt: 'AI relationships were generated on {date}. They are saved and only regenerated when the evidence changes or you ask.', mapRefresh: 'Re-run AI analysis', mapRefreshing: 'Re-running the AI analysis…',
   resetTokenInvalid: 'This password-reset link is not valid or was already used. Request a new one from "Forgot password".', resetTokenExpired: 'This password-reset link has expired (links last one hour). Request a new one.',
   err_BLOCKED_TYPE: 'This file type (executables and scripts) is not accepted as evidence.', err_CONTENT_MISMATCH: 'The file content does not match its extension, or it is an executable. Upload rejected.', err_EMPTY_FILE: 'The file is empty.',
   // v14
@@ -161,6 +162,7 @@ I18n.extend('en', {
 });
 
 I18n.extend('ar', {
+  mapAiSavedAt: 'ولّد الذكاء الاصطناعي هذه العلاقات في {date}. هي محفوظة ولا تُعاد إلا عند تغيّر الأدلة أو بطلبك.', mapRefresh: 'إعادة التحليل بالذكاء الاصطناعي', mapRefreshing: 'جارٍ إعادة التحليل بالذكاء الاصطناعي…',
   resetTokenInvalid: 'رابط استعادة كلمة المرور غير صالح أو سبق استخدامه. اطلب رابطاً جديداً من «نسيت كلمة المرور».', resetTokenExpired: 'انتهت صلاحية رابط استعادة كلمة المرور (مدته ساعة واحدة). اطلب رابطاً جديداً.',
   err_BLOCKED_TYPE: 'نوع الملف هذا (الملفات التنفيذية والسكربتات) غير مقبول كدليل.', err_CONTENT_MISMATCH: 'محتوى الملف لا يطابق امتداده أو أنه ملف تنفيذي. تم رفض الرفع.', err_EMPTY_FILE: 'الملف فارغ.',
   // v14

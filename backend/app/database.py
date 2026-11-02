@@ -135,6 +135,16 @@ CREATE TABLE IF NOT EXISTS case_summary (
     generated_at TEXT NOT NULL
 );
 
+-- Cached AI relationships for the evidence map (regenerated only when the
+-- evidence changes or the user asks), so the map does not change on every visit.
+CREATE TABLE IF NOT EXISTS case_map_ai (
+    case_id INTEGER PRIMARY KEY REFERENCES cases(id),
+    lang TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    edges_json TEXT NOT NULL,
+    generated_at TEXT NOT NULL
+);
+
 -- Optional semantic-search vectors (only when an embeddings provider is configured).
 CREATE TABLE IF NOT EXISTS evidence_embeddings (
     evidence_id INTEGER PRIMARY KEY REFERENCES evidence(id),

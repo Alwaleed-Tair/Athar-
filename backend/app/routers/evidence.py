@@ -138,79 +138,96 @@ def related_evidence(case_id: int, user: dict = Depends(require_case_member)):
 
 
 @router.get("/cases/{case_id}/evidence-map")
-def evidence_map(case_id: int, user: dict = Depends(require_case_member), lang: str = Query(default="en")):
+def evidence_map(
+    case_id: int,
+    user: dict = Depends(require_case_member),
+    lang: str = Query(default="en"),
+    refresh: bool = Query(default=False),
+):
     """
-    Correlation graph for a case's evidence, combining two different
-    kinds of edges:
-    - Deterministic facts, no AI, no threshold: IDENTICAL_FILE (exact
-      SHA-256 match) and SAME_DEVICE (exact EXIF Make/Model match).
-    - AI-judged relationships (only when ATHAR_AI_KEY is configured):
-      the model is given every item's metadata at once and reasons about
-      which relationships are genuinely investigatively meaningful --
-      there is deliberately NO fixed numeric cutoff (e.g. "within N
-      minutes") anywhere in this endpoint. With no AI key, no time-based
-      or contextual edges are produced at all; we never substitute a
-      guessed threshold for real judgment.
+    Correlation graph for a case's evidence:
+    - Deterministic edges, computed on every call: IDENTICAL_FILE (same
+      SHA-256) and SAME_DEVICE (same EXIF Make/Model).
+    - AI-judged edges (only with ATHAR_AI_KEY). A language model does not
+      answer the same way twice, so the result is CACHED per case: it is
+      reused while the evidence is unchanged and the language is the same,
+      and regenerated only when the evidence changes or the user asks
+      (`refresh=true`). This also avoids re-sending evidence to the AI
+      provider every time the tab is opened.
     """
-    with get_conn() as conn:
-        ai_items = build_evidence_ai_items(conn, case_id)
+    import hashlib
 
-    nodes = [
-        {
-            "id": i["id"],
-            "filename": i["filename"],
-            "sha256": i["sha256"],
-            "uploaded_at": i["uploaded_at"],
-            "title": i.get("title") or "",
-            "device": i["device"],
-        }
-        for i in ai_items
-    ]
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, title, description, sha256, uploaded_at, exif_json, category "
+            "FROM evidence WHERE case_id = ? AND deleted_at IS NULL ORDER BY uploaded_at ASC", (case_id,)
+        ).fetchall()
+        auth_rows = {a["evidence_id"]: a["result_json"] for a in conn.execute(
+            "SELECT evidence_id, result_json FROM evidence_authenticity WHERE evidence_id IN "
+            "(SELECT id FROM evidence WHERE case_id = ? AND deleted_at IS NULL)", (case_id,))}
+        ocr_sources = {t["evidence_id"]: t["extracted_at"] for t in conn.execute(
+            "SELECT evidence_id, extracted_at FROM evidence_text WHERE source LIKE 'OCR_%' AND evidence_id IN "
+            "(SELECT id FROM evidence WHERE case_id = ? AND deleted_at IS NULL)", (case_id,))}
+
+    nodes = []
+    for r in rows:
+        try:
+            exif = json.loads(r["exif_json"])
+        except Exception:
+            exif = {}
+        device = f"{exif.get('Make') or ''} {exif.get('Model') or ''}".strip() or None
+        nodes.append({"id": r["id"], "filename": r["filename"], "sha256": r["sha256"],
+                      "uploaded_at": r["uploaded_at"], "title": r["title"] or "", "device": device})
 
     edges = []
     for i in range(len(nodes)):
         for j in range(i + 1, len(nodes)):
             a, b = nodes[i], nodes[j]
             if a["sha256"] == b["sha256"]:
-                edges.append(
-                    {"source": a["id"], "target": b["id"], "type": "IDENTICAL_FILE", "ai_estimated": False}
-                )
+                edges.append({"source": a["id"], "target": b["id"], "type": "IDENTICAL_FILE", "ai_estimated": False})
                 continue
             if a["device"] and b["device"] and a["device"] == b["device"]:
-                edges.append(
-                    {"source": a["id"], "target": b["id"], "type": "SAME_DEVICE", "ai_estimated": False}
-                )
+                edges.append({"source": a["id"], "target": b["id"], "type": "SAME_DEVICE", "ai_estimated": False})
 
-    ai_status = None
-    ai_message = None
+    ai_status = ai_message = ai_generated_at = None
+    ai_cached = False
     if len(nodes) >= 2:
-        if analysis.ai_enabled():
-            # nodes (built above, for the frontend) already captured
-            # uploaded_at for display -- strip it from this copy before
-            # it reaches the model, since testing showed the model would
-            # use upload-time proximity as a "correlation" signal even
-            # when explicitly told not to, whenever the field was simply
-            # present in the data at all.
-            ai_items_for_correlation = [
-                {k: v for k, v in item.items() if k != "uploaded_at"} for item in ai_items
-            ]
-            ai_result = analysis.analyze_case_correlations(ai_items_for_correlation, lang=lang)
-            ai_status = ai_result["status"]
-            if ai_status == "SUCCESS":
-                edges.extend(ai_result["edges"])
-            else:
-                ai_message = ai_result.get("message_ar" if lang == "ar" else "message_en")
-        else:
+        if not analysis.ai_enabled():
             ai_status = "DISABLED"
             ai_message = (
-                "تحليل الذكاء الاصطناعي معطّل: لم يتم ضبط ATHAR_AI_KEY."
-                if lang == "ar"
+                "تحليل الذكاء الاصطناعي معطّل: لم يتم ضبط ATHAR_AI_KEY." if lang == "ar"
                 else "AI analysis is disabled: no ATHAR_AI_KEY configured."
             )
+        else:
+            signature = hashlib.sha256(json.dumps(
+                [[r["id"], r["sha256"], r["title"], r["description"], r["category"], auth_rows.get(r["id"], ""),
+                  ocr_sources.get(r["id"], "")] for r in rows] + [lang], ensure_ascii=False).encode()).hexdigest()
+            with get_conn() as conn:
+                cached = conn.execute("SELECT * FROM case_map_ai WHERE case_id = ?", (case_id,)).fetchone()
+            if cached and cached["signature"] == signature and not refresh:
+                ai_status, ai_cached, ai_generated_at = "SUCCESS", True, cached["generated_at"]
+                edges.extend(json.loads(cached["edges_json"]))
+            else:
+                with get_conn() as conn:
+                    ai_items = build_evidence_ai_items(conn, case_id)
+                # uploaded_at is removed: the model used upload-time proximity as a
+                # "correlation" even when told not to, whenever the field was present.
+                ai_result = analysis.analyze_case_correlations(
+                    [{k: v for k, v in item.items() if k != "uploaded_at"} for item in ai_items], lang=lang)
+                ai_status = ai_result["status"]
+                if ai_status == "SUCCESS":
+                    ai_generated_at = _now()
+                    edges.extend(ai_result["edges"])
+                    with get_conn() as conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO case_map_ai (case_id, lang, signature, edges_json, generated_at) VALUES (?,?,?,?,?)",
+                            (case_id, lang, signature, json.dumps(ai_result["edges"], ensure_ascii=False), ai_generated_at))
+                        conn.commit()
+                else:
+                    ai_message = ai_result.get("message_ar" if lang == "ar" else "message_en")
 
-    return {"nodes": nodes, "edges": edges, "ai_status": ai_status, "ai_message": ai_message}
-
-
+    return {"nodes": nodes, "edges": edges, "ai_status": ai_status, "ai_message": ai_message,
+            "ai_cached": ai_cached, "ai_generated_at": ai_generated_at}
 
 
 def _row_evidence_dict(r) -> dict:
@@ -732,6 +749,7 @@ def run_ocr(evidence_id: int, user: dict = Depends(get_current_user)):
             conn.execute("INSERT OR REPLACE INTO evidence_text (evidence_id, text, extracted_at, source) VALUES (?,?,?,?)",
                          (evidence_id, result["text"], _now(), source))
             conn.execute("DELETE FROM case_summary WHERE case_id = ?", (ev["case_id"],))
+            conn.execute("DELETE FROM case_map_ai WHERE case_id = ?", (ev["case_id"],))
             lines = [(f"ocr line {i}", ln) for i, ln in enumerate(result["text"].splitlines(), start=1)]
             parsed = chats.parse_timestamped_lines(lines) or chats.parse_speaker_lines(lines)
             if parsed:

@@ -16,57 +16,67 @@ const EvidenceMap = (() => {
     const wrap = document.createElement('div');
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<h3>${I18n.t('evidenceMap')}</h3><div id="map-container" class="mt-3">${UI.spinner(I18n.t('mapLoading'))}</div>`;
+    card.innerHTML = `<h3>${I18n.t('evidenceMap')}</h3><div id="map-container" class="mt-3"></div>`;
     wrap.appendChild(card);
-
     const container = card.querySelector('#map-container');
 
-    let data;
-    try {
-      data = await Api.getEvidenceMap(caseId);
-    } catch (e) {
-      container.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(e))}</div>`;
-      return wrap;
+    async function draw(refresh) {
+      container.innerHTML = UI.spinner(refresh ? I18n.t('mapRefreshing') : I18n.t('mapLoading'));
+      let data;
+      try {
+        data = await Api.getEvidenceMap(caseId, refresh);
+      } catch (e) {
+        container.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(e))}</div>`;
+        return;
+      }
+      container.innerHTML = '';
+
+      if (!data.nodes || data.nodes.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.innerHTML = `<h3>${I18n.t('mapEmptyTitle')}</h3><p>${I18n.t('mapEmptyBody')}</p>`;
+        container.appendChild(empty);
+        return;
+      }
+
+      container.appendChild(buildLegend());
+
+      const hasAiEdges = (data.edges || []).some((e) => e.ai_estimated);
+      if (hasAiEdges) {
+        const caption = document.createElement('p');
+        caption.className = 'text-muted text-xs';
+        caption.style.cssText = 'margin-block-end:12px; display:flex; align-items:center; gap:6px;';
+        caption.innerHTML = `${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('aiAutomatedEstimate')}</span>`;
+        container.appendChild(caption);
+      }
+
+      // AI relationships are saved: say when they were produced and let the user re-run them.
+      if (data.ai_status === 'SUCCESS' && data.ai_generated_at) {
+        const bar = document.createElement('div');
+        bar.className = 'flex gap-2 text-sm text-muted';
+        bar.style.cssText = 'align-items:center; flex-wrap:wrap; margin-block-end:12px;';
+        bar.innerHTML = `<span>${I18n.t('mapAiSavedAt', { date: UI.dateHtml(data.ai_generated_at) })}</span>
+          <button type="button" class="btn btn-sm" id="map-refresh">${UI.icon('refresh', '', 14)} <span>${I18n.t('mapRefresh')}</span></button>`;
+        bar.querySelector('#map-refresh').onclick = () => draw(true);
+        container.appendChild(bar);
+      }
+
+      const banner = buildAiStatusBanner(data);
+      if (banner) container.appendChild(banner);
+
+      container.appendChild(buildGraph(data));
+      const list = buildEdgeList(data);
+      if (list) container.appendChild(list);
+
+      if (data.edges.length === 0 && data.ai_status !== 'DISABLED' && data.ai_status !== 'FAILED') {
+        const note = document.createElement('p');
+        note.className = 'text-muted text-sm mt-3';
+        note.textContent = I18n.t('mapEmptyBody');
+        container.appendChild(note);
+      }
     }
 
-    container.innerHTML = '';
-
-    if (!data.nodes || data.nodes.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.innerHTML = `<h3>${I18n.t('mapEmptyTitle')}</h3><p>${I18n.t('mapEmptyBody')}</p>`;
-      container.appendChild(empty);
-      return wrap;
-    }
-
-    container.appendChild(buildLegend());
-
-    const hasAiEdges = (data.edges || []).some((e) => e.ai_estimated);
-    if (hasAiEdges) {
-      const caption = document.createElement('p');
-      caption.className = 'text-muted text-xs';
-      caption.style.marginBlockEnd = '12px';
-      caption.style.display = 'flex';
-      caption.style.alignItems = 'center';
-      caption.style.gap = '6px';
-      caption.innerHTML = `${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('aiAutomatedEstimate')}</span>`;
-      container.appendChild(caption);
-    }
-
-    const banner = buildAiStatusBanner(data);
-    if (banner) container.appendChild(banner);
-
-    container.appendChild(buildGraph(data));
-    const list = buildEdgeList(data);
-    if (list) container.appendChild(list);
-
-    if (data.edges.length === 0 && data.ai_status !== 'DISABLED' && data.ai_status !== 'FAILED') {
-      const note = document.createElement('p');
-      note.className = 'text-muted text-sm mt-3';
-      note.textContent = I18n.t('mapEmptyBody');
-      container.appendChild(note);
-    }
-
+    await draw(false);
     return wrap;
   }
 

@@ -469,7 +469,7 @@ def analyze_evidence(target: dict, related: list[dict], lang: str = "en") -> dic
         {
             "model": AI_MODEL,
             "messages": _messages(prompt, {"TARGET": target, "OTHER_EVIDENCE_IN_CASE": related}),
-            "max_tokens": 1000,
+            "max_tokens": 1000, "temperature": 0,
             "response_format": {"type": "json_object"},
         }
     ).encode("utf-8")
@@ -626,7 +626,7 @@ def analyze_case_correlations(items: list[dict], lang: str = "en") -> dict:
         {
             "model": AI_MODEL,
             "messages": _messages(prompt, items),
-            "max_tokens": 1500,
+            "max_tokens": 1500, "temperature": 0,
             "response_format": {"type": "json_object"},
         }
     ).encode("utf-8")
@@ -773,7 +773,7 @@ def generate_case_summary(case_name: str, items: list[dict], lang: str = "en") -
         {
             "model": AI_MODEL,
             "messages": _messages(prompt, items),
-            "max_tokens": 600,
+            "max_tokens": 600, "temperature": 0,
         }
     ).encode("utf-8")
 
@@ -1065,7 +1065,7 @@ def summarize_conversation(meta: dict, messages: list[dict], total: int, lang: s
         ],
     }
     body = json.dumps({
-        "model": AI_MODEL, "messages": _messages(task, data), "max_tokens": 1200,
+        "model": AI_MODEL, "messages": _messages(task, data), "max_tokens": 1200, "temperature": 0,
         "response_format": {"type": "json_object"},
     }).encode("utf-8")
     req = urllib.request.Request(

@@ -166,3 +166,4 @@ def delete_derived_data(conn, evidence_id: int, case_id: int) -> None:
         (case_id,),
     )
     conn.execute("DELETE FROM case_summary WHERE case_id = ?", (case_id,))
+    conn.execute("DELETE FROM case_map_ai WHERE case_id = ?", (case_id,))
