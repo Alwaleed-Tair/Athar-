@@ -129,7 +129,7 @@ const Account = (() => {
       <div class="card mt-4 danger-zone">
         <h3 style="color:var(--color-danger)">${I18n.t('accountDeleteTitle')}</h3>
         <p class="text-sm">${I18n.t('accountDeleteBody')}</p>
-        <ul class="text-sm"><li>${I18n.t('accountDeleteCases')}</li><li>${I18n.t('accountDeleteData')}</li><li>${I18n.t('accountDeleteAudit')}</li></ul>
+        <p class="text-muted text-sm">${I18n.t('accountDeleteCases')}</p>
         <button type="button" class="btn btn-danger" id="acc-delete">${UI.icon('trash', '', 15)} <span>${I18n.t('accountDeleteBtn')}</span></button>
       </div>
     `;

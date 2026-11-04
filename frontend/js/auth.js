@@ -111,14 +111,14 @@ const Auth = (() => {
 
     const isRegister = authMode === 'register';
     const isDark = State.get().theme === 'dark';
-    const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    const symbolSrc = '/assets/athar-logo-128.png';
 
     const card = document.createElement('div');
     card.className = 'card login-card';
 
     card.innerHTML = `
       <div class="login-cyber-logo">
-        <img src="${symbolSrc}" alt="ATHAR" class="athar-logo-img" />
+        <img src="/assets/athar-logo.png" alt="أثر ATHAR" class="athar-logo-img" />
       </div>
       <div class="login-brand-name">${I18n.t('appName')}</div>
       <div class="login-tagline">${I18n.t('appTagline')}</div>
@@ -210,11 +210,6 @@ const Auth = (() => {
         <button type="button" class="link-btn" id="switch-mode" style="color:var(--color-cyan); font-weight:600;">
           ${isRegister ? I18n.t('alreadyHaveAccount') : I18n.t('dontHaveAccount')}
         </button>
-      </div>
-
-      <div class="restricted-warning-box">
-        <span class="warning-icon">${UI.icon('shieldAlert', '', 18)}</span>
-        <span>${I18n.t('restrictedAccessWarning')}</span>
       </div>
     `;
 
@@ -309,11 +304,11 @@ const Auth = (() => {
   // approves each request from the Users screen.
   function renderPending(container, email, { justRegistered }) {
     container.innerHTML = '';
-    const symbolSrc = State.get().theme === 'dark' ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    const symbolSrc = '/assets/athar-logo.png';
     const card = document.createElement('div');
     card.className = 'card login-card';
     card.innerHTML = `
-      <div class="login-cyber-logo"><img src="${symbolSrc}" alt="ATHAR" class="athar-logo-img" /></div>
+      <div class="login-cyber-logo"><img src="/assets/athar-logo.png" alt="أثر ATHAR" class="athar-logo-img" /></div>
       <div class="login-brand-name">${justRegistered ? I18n.t('pendingCreatedTitle') : I18n.t('pendingTitle')}</div>
       <div class="mt-3"><div class="alert alert-${justRegistered ? 'success' : 'warning'}">${UI.icon(justRegistered ? 'check' : 'shield', '', 18)}
         <span>${I18n.t(justRegistered ? 'pendingCreatedBody' : 'pendingBody', { email: `<bdi dir="ltr">${UI.escapeHtml(email)}</bdi>` })}</span></div></div>

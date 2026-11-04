@@ -12,7 +12,7 @@ function applyThemeAndDir() {
   // Dynamically update favicon based on active theme
   const fav = document.querySelector('link[rel="icon"]');
   if (fav) {
-    fav.href = theme === 'dark' ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    fav.href = '/assets/favicon-32.png';
   }
 }
 
@@ -43,7 +43,7 @@ function logout() {
 function renderTopbar() {
   const { user, theme } = State.get();
   const isDark = theme === 'dark';
-  const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+  const symbolSrc = '/assets/athar-logo-128.png';
 
   const bar = document.createElement('div');
   bar.className = 'topbar';

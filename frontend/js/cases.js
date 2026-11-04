@@ -25,10 +25,6 @@ const Cases = (() => {
     const filterSection = document.createElement('div');
     filterSection.className = 'filter-section-bar';
     filterSection.innerHTML = `
-      <div class="filter-title">
-        ${UI.icon('filter', '', 17)}
-        <span>${I18n.t('filterSection')}</span>
-      </div>
       <div class="filter-group">
         <select id="filter-status" class="filter-select">
           <option value="ALL">${I18n.t('allStatuses')}</option>
@@ -232,9 +228,6 @@ const Cases = (() => {
             ${UI.icon('folder', '', 20)}
             <span>${I18n.t('initiateForensicCase')}</span>
           </h3>
-          <div class="text-muted text-xs" style="margin-top:2px;">
-            ${I18n.t('createCaseContainer')}
-          </div>
         </div>
       </div>
       <div id="create-case-error"></div>
@@ -251,9 +244,6 @@ const Cases = (() => {
             value="${suggestedId}" 
             required 
           />
-          <div class="field-hint-box">
-            ${I18n.t('caseIdHint')}
-          </div>
         </div>
 
         <!-- Field 2: Case Title / Name -->
@@ -266,9 +256,6 @@ const Cases = (() => {
             placeholder="${I18n.t('caseTitlePlaceholder')}" 
             required 
           />
-          <div class="field-hint-box">
-            ${I18n.t('caseTitleHint')}
-          </div>
         </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">

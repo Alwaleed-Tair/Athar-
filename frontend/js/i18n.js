@@ -426,7 +426,8 @@ const I18n = (() => {
   }
   function t(key, vars) {
     const lang = getLang();
-    let str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
+    const own = (d) => d && Object.prototype.hasOwnProperty.call(d, key);
+    let str = own(STRINGS[lang]) ? STRINGS[lang][key] : own(STRINGS.en) ? STRINGS.en[key] : key;
     if (vars) {
       Object.keys(vars).forEach((k) => {
         str = str.split(`{${k}}`).join(vars[k]);

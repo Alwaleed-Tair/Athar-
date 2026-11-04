@@ -1301,3 +1301,147 @@ mark { background: rgba(245, 158, 11, 0.35); color: inherit; border-radius: 3px;
 .pending-card { border-color: rgba(245, 158, 11, 0.55) !important; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
 .pending-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 0; border-block-start: 1px solid var(--color-border); }
 .topbar .btn .pending-badge { top: -6px; inset-inline-end: -6px; position: absolute; }
+
+/* ==========================================================================
+   Identity v2 — calm, taken from the Athar logo: ink black, white, one red accent.
+   No glow, no gradients, no background pictures. This block intentionally
+   overrides the earlier "cyber" styling above.
+   ========================================================================== */
+:root {
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'SF Arabic', 'Noto Sans Arabic', Tahoma, sans-serif;
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f2f5;
+  --color-surface-translucent: #ffffff;
+  --color-border: #e3e6eb;
+  --color-text: #0d1117;
+  --color-text-muted: #5f6875;
+  --color-primary: #0d1117;
+  --color-primary-hover: #262c36;
+  --color-primary-contrast: #ffffff;
+  --color-accent: #e03131;
+  --color-cyan: #0d1117;
+  --color-success: #138a52;
+  --color-success-bg: #e8f5ee;
+  --color-danger: #c92a2a;
+  --color-danger-bg: #fdecec;
+  --color-warning: #a76300;
+  --color-warning-bg: #fff6e5;
+  --shadow-sm: none;
+  --shadow-md: 0 10px 30px rgba(13, 17, 23, 0.12);
+  --shadow-glow: none;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+:root[data-theme="dark"] {
+  --color-bg: #0d1117;
+  --color-surface: #151b23;
+  --color-surface-2: #1c232d;
+  --color-surface-translucent: #151b23;
+  --color-border: #2a323d;
+  --color-text: #e9ecf0;
+  --color-text-muted: #8d96a3;
+  --color-primary: #f2f4f7;
+  --color-primary-hover: #d9dde3;
+  --color-primary-contrast: #0d1117;
+  --color-accent: #f04747;
+  --color-cyan: #e9ecf0;
+  --color-success: #3fb27f;
+  --color-success-bg: rgba(63, 178, 127, 0.14);
+  --color-danger: #f06a6a;
+  --color-danger-bg: rgba(240, 71, 71, 0.14);
+  --color-warning: #e0a43a;
+  --color-warning-bg: rgba(224, 164, 58, 0.14);
+  --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.55);
+}
+
+body, :root[data-theme="dark"] body, :root[data-theme="light"] body, [dir="rtl"] body {
+  background-image: none !important;
+  background-color: var(--color-bg) !important;
+  font-family: var(--font-sans);
+}
+a, a:hover { color: var(--color-text); }
+a:hover { text-decoration: underline; }
+
+/* surfaces */
+.card, :root[data-theme="dark"] .card, :root[data-theme="light"] .card,
+.modal, :root[data-theme="dark"] .modal, .filter-section-bar, :root[data-theme="dark"] .filter-section-bar,
+.case-card, :root[data-theme="dark"] .case-card {
+  background: var(--color-surface) !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: none !important;
+}
+.modal { box-shadow: var(--shadow-md) !important; }
+.topbar, :root[data-theme="dark"] .topbar {
+  background: var(--color-surface) !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-block-end: 1px solid var(--color-border) !important;
+}
+
+/* no motion gimmicks */
+button:hover:not(:disabled), .btn:hover:not(:disabled), .case-card:hover, .tab:hover,
+button:active:not(:disabled), .btn:active:not(:disabled) { transform: none !important; }
+.case-card:hover { border-color: var(--color-text-muted) !important; }
+
+/* buttons */
+.btn, button.btn { box-shadow: none !important; text-shadow: none !important; border-radius: 8px; font-weight: 600; }
+.btn-primary, .btn-neon, .btn-cyan {
+  background: var(--color-primary) !important;
+  border: 1px solid var(--color-primary) !important;
+  color: var(--color-primary-contrast) !important;
+  letter-spacing: 0 !important;
+}
+.btn-primary:hover:not(:disabled), .btn-neon:hover:not(:disabled), .btn-cyan:hover:not(:disabled) {
+  background: var(--color-primary-hover) !important; border-color: var(--color-primary-hover) !important;
+}
+.btn-danger { color: var(--color-danger) !important; border-color: var(--color-border) !important; }
+input:focus, textarea:focus, select:focus { border-color: var(--color-text) !important; box-shadow: 0 0 0 3px rgba(13, 17, 23, 0.08) !important; }
+:root[data-theme="dark"] input:focus, :root[data-theme="dark"] textarea:focus, :root[data-theme="dark"] select:focus { box-shadow: 0 0 0 3px rgba(255,255,255,0.10) !important; }
+
+/* tabs: the logo's red as the only accent */
+.tab.active { color: var(--color-text) !important; border-color: var(--color-accent) !important; }
+
+/* brand */
+.brand-icon-box, :root[data-theme="dark"] .brand-icon-box, :root[data-theme="light"] .brand-icon-box {
+  background: none !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; width: auto !important; height: auto !important;
+}
+.brand-symbol-img { width: 38px !important; height: 38px !important; border-radius: 50%; filter: none !important; }
+.brand-name, .login-brand-name {
+  background: none !important; -webkit-background-clip: initial !important; background-clip: initial !important;
+  -webkit-text-fill-color: currentColor !important; color: var(--color-text) !important; text-shadow: none !important;
+}
+.brand-sub { color: var(--color-text-muted) !important; }
+.login-cyber-logo, :root[data-theme="dark"] .login-cyber-logo, :root[data-theme="light"] .login-cyber-logo {
+  background: none !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; width: auto !important; height: auto !important;
+}
+.athar-logo-img { width: 96px !important; height: 96px !important; border-radius: 50%; filter: none !important; }
+
+/* small neutralisations */
+.case-id-badge { background: var(--color-surface-2) !important; color: var(--color-text-muted) !important; border-color: var(--color-border) !important; }
+.examiner-avatar, .doc-step-num { background: var(--color-text) !important; color: var(--color-bg) !important; }
+.chip-link { color: var(--color-text) !important; border-color: var(--color-border) !important; }
+.ai-tag { background: var(--color-warning-bg) !important; color: var(--color-warning) !important; border-color: transparent !important; }
+.dropzone:hover, .dropzone.dragover { border-color: var(--color-text) !important; color: var(--color-text) !important; background: var(--color-surface-2) !important; }
+.doc-nav-link.active { background: var(--color-primary) !important; color: var(--color-primary-contrast) !important; border-color: var(--color-primary) !important; }
+.site-footer { background: transparent !important; }
+.restricted-warning-box { display: none !important; }
+mark { background: rgba(224, 49, 49, 0.18); }
+/* hide containers whose text was intentionally emptied (concise wording) */
+p:empty, span.text-muted:empty, .footer-note:empty, .snote:empty, .field-hint-box:empty, li:empty { display: none !important; }
+/* identity v2 — remaining neon spots */
+.auth-nav-tab.active { background: var(--color-primary) !important; color: var(--color-primary-contrast) !important; box-shadow: none !important; }
+.lang-toggle-btn.active { color: var(--color-primary-contrast) !important; box-shadow: none !important; }
+.bell-badge, .pending-badge { background: var(--color-accent) !important; box-shadow: 0 0 0 2px var(--color-surface) !important; }
+.status-dot-active { box-shadow: none !important; }
+.chain-item::before { background: var(--color-text-muted) !important; box-shadow: none !important; }
+.chain-item.broken::before { background: var(--color-danger) !important; }
+.pending-card { border-color: var(--color-warning) !important; box-shadow: none !important; }
+.integrity-box { border: 0 !important; background: none !important; padding: 0 !important; }
+.doc-section h2 { color: var(--color-text) !important; }
+.login-wrap, :root[data-theme="dark"] .login-wrap, :root[data-theme="light"] .login-wrap { background: var(--color-bg) !important; background-image: none !important; }
+@media (max-width: 768px) {
+  .examiner-profile-pill .examiner-name { display: inline !important; }          /* member chips keep the name */
+  .topbar .examiner-profile-pill .examiner-name { display: none !important; }   /* only the top bar collapses to the avatar */
+}
