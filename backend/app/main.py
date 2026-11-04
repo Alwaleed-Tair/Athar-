@@ -39,6 +39,10 @@ async def security_headers(request: Request, call_next):
         h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if request.url.path.startswith("/api/"):
         h.setdefault("Cache-Control", "no-store")
+    elif request.url.path.startswith(("/js/", "/css/")) or request.url.path == "/":
+        # Always revalidate the app's own code (cheap 304 when unchanged), so a new
+        # deploy is picked up immediately instead of browsers running stale JS.
+        h["Cache-Control"] = "no-cache"
     return response
 
 
