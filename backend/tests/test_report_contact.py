@@ -64,7 +64,7 @@ def test_contact_form(client, make_user):
     ok = {"name": "Sara Ali", "email": "sara@gmail.com", "category": "TECHNICAL",
           "subject": "Cannot upload", "message": "The upload button does nothing on mobile."}
     r = client.post("/api/contact", json=ok)
-    assert r.status_code == 201 and r.json()["stored"] is True and r.json()["emailed"] is False   # no SMTP -> not claimed
+    assert r.status_code == 201 and r.json()["stored"] is True and "emailed" not in r.json()
     assert client.post("/api/contact", json={**ok, "email": "not-an-email"}).status_code == 400
     assert client.post("/api/contact", json={**ok, "category": "WHATEVER"}).status_code == 400
     assert client.post("/api/contact", json={**ok, "message": "short"}).status_code == 422

@@ -74,6 +74,7 @@ const Notifications = (() => {
   async function refresh() {
     if (refreshing || !State.get().user) return;
     refreshing = true;
+    refreshPending();
     try {
       let cases;
       try {
@@ -260,11 +261,26 @@ const Notifications = (() => {
     closeBtn.onclick = close;
   }
 
+  // --- Admin: registration requests waiting for approval ---------------------------
+  let pendingCount = 0;
+  function paintPending() {
+    document.querySelectorAll('.pending-badge').forEach((b) => {
+      b.textContent = pendingCount > 9 ? '9+' : String(pendingCount);
+      b.style.display = pendingCount > 0 ? '' : 'none';
+    });
+  }
+  function setPending(n) { pendingCount = n; paintPending(); }
+  async function refreshPending() {
+    const u = State.get().user;
+    if (!u || u.role !== 'ADMIN') return;
+    try { setPending((await Api.pendingUsers()).length); } catch (e) { /* ignore */ }
+  }
+
   function stop() {
     clearTimeout(pollTimer);
     pollTimer = null;
     current = { count: 0, alerts: [] };
   }
 
-  return { refresh, renderBell, stop };
+  return { refresh, renderBell, stop, setPending, refreshPending, getPending: () => pendingCount, paintPending };
 })();

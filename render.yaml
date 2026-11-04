@@ -21,17 +21,5 @@ services:
         generateValue: true
       - key: ATHAR_ADMIN_PASSWORD
         sync: false
-      - key: ATHAR_PUBLIC_URL
-        sync: false
       - key: ATHAR_AI_KEY
-        sync: false
-      - key: ATHAR_SMTP_HOST
-        sync: false
-      - key: ATHAR_SMTP_USER
-        sync: false
-      - key: ATHAR_SMTP_PASSWORD
-        sync: false
-      - key: ATHAR_SMTP_FROM
-        sync: false
-      - key: ATHAR_CONTACT_TO
         sync: false

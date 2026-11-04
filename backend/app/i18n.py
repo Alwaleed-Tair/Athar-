@@ -85,6 +85,14 @@ TEMPLATES = {
         "en": "Admin {actor_username} manually activated the account of {target_username}",
         "ar": "فعّل المسؤول {actor_username} حساب {target_username} يدوياً",
     },
+    "ACCOUNT_APPROVED": {
+        "en": "Admin {actor_username} approved the account of {target_username}",
+        "ar": "وافق المسؤول {actor_username} على حساب {target_username}",
+    },
+    "ACCOUNT_REJECTED": {
+        "en": "Admin {actor_username} rejected the registration request of {target_username}",
+        "ar": "رفض المسؤول {actor_username} طلب تسجيل {target_username}",
+    },
     "PROFILE_UPDATED": {
         "en": "{username} updated their profile (name \"{full_name}\")",
         "ar": "حدّث {username} ملفه الشخصي (الاسم \"{full_name}\")",

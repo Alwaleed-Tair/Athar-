@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, integrity, mailer
+from . import config, integrity
 from .database import init_db
 from .routers import auth, cases, contact, evidence, reports, search
 
@@ -66,13 +66,6 @@ def _startup():
         vurl = config.VISION_URL or config.ATHAR_AI_URL
         print(f"[ATHAR] AI: text via {config.ATHAR_AI_URL.split('/')[2]} ({config.ATHAR_AI_MODEL}); "
               f"images via {vurl.split('/')[2]} ({config.ATHAR_AI_VISION_MODEL})")
-    if mailer.is_configured():
-        print("[ATHAR] E-mail: SMTP configured.")
-    elif config.MAIL_CONSOLE:
-        print("[ATHAR] E-mail: console mode (development only) - links are printed to this log.")
-    else:
-        print("[ATHAR] Note: SMTP not configured - verification e-mails cannot be sent; admins can activate "
-              "accounts manually from the Users screen.")
     try:
         n = integrity.purge_expired()
         if n:

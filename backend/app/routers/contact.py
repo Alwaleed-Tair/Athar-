@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .. import audit, config, mailer, ratelimit
+from .. import audit, config, ratelimit
 from ..database import get_conn
 from ..deps import require_admin
 
@@ -27,14 +27,13 @@ class ContactRequest(BaseModel):
 def send_contact(body: ContactRequest, request: Request):
     """Open to signed-out visitors, so it is throttled per IP and has a
     honeypot field. The message is always stored; an e-mail notification is
-    additionally sent only if SMTP is configured -- and the response says
-    which of the two actually happened."""
+    visible to administrators in the Users screen."""
     fwd = request.headers.get("x-forwarded-for", "")
     ip = (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown"))[:64]
     if not ratelimit.allow(f"contact:{ip}", 5, 3600):
         raise HTTPException(status_code=429, detail="TOO_MANY_ATTEMPTS")
     if body.website.strip():  # bot
-        return {"status": "RECEIVED", "stored": True, "emailed": False}
+        return {"status": "RECEIVED", "stored": True}
     name = " ".join(body.name.split())
     email = body.email.strip()
     subject = " ".join(body.subject.split())
@@ -61,16 +60,7 @@ def send_contact(body: ContactRequest, request: Request):
         conn.commit()
         msg_id = cur.lastrowid
 
-    emailed = False
-    if config.CONTACT_TO and mailer.is_configured():
-        text = (f"New ATHAR contact message #{msg_id}\nFrom: {name} <{email}>\nCategory: {body.category}\n"
-                f"Subject: {subject}\n\n{body.message.strip()}\n")
-        emailed = mailer.send_mail(config.CONTACT_TO, f"[ATHAR contact] {subject}", text, reply_to=email) == "SENT"
-        if emailed:
-            with get_conn() as conn:
-                conn.execute("UPDATE contact_messages SET emailed = 1 WHERE id = ?", (msg_id,))
-                conn.commit()
-    return {"status": "RECEIVED", "stored": True, "emailed": emailed}
+    return {"status": "RECEIVED", "stored": True}
 
 
 @router.get("/contact/messages")

@@ -10,7 +10,7 @@ const Pages = (() => {
         updated: 'Last updated: 1 November 2026',
         sections: [
           { h: '1. What data ATHAR collects', list: [
-            'Account data: your name, e-mail address (used to sign in and to verify the account) and a salted PBKDF2 hash of your password. The password itself is never stored.',
+            'Account data: your name, e-mail address (used only as your sign-in name; ATHAR does not send e-mails) and a salted PBKDF2 hash of your password. The password itself is never stored.',
             'Case and evidence data that you enter or upload: case details, evidence files, their SHA-256 hashes, titles and descriptions, EXIF metadata, text extracted from documents, and messages parsed from chat exports.',
             'The audit log (chain of custody): who did what and when - sign-ins, failed sign-ins, uploads, views, downloads, edits, deletions, analyses and report exports - together with file names and hashes. It does not store IP addresses.',
             'Messages you send through the contact form (name, e-mail, subject, message).',
@@ -23,12 +23,11 @@ const Pages = (() => {
           { h: '3. Who can access your data', list: [
             'Only members of a case can open that case and its evidence. Every request is checked on the server. A case you are not a member of looks exactly as if it does not exist.',
             'The case owner (its creator) can share the case with another verified user by typing that person\'s exact e-mail address. They can remove members again. Search, similarity and cross-case alerts only ever use cases you are a member of.',
-            'Platform administrators manage accounts (create users, activate accounts, reset passwords) and read contact-form messages. Being an administrator does NOT give access to other users\' cases or evidence; an administrator sees a case only if its owner added them as a member, and that is recorded in the case\'s audit log.',
+            'Platform administrators manage accounts (approve or reject registration requests, create users, reset passwords) and read contact-form messages. Being an administrator does NOT give access to other users\' cases or evidence; an administrator sees a case only if its owner added them as a member, and that is recorded in the case\'s audit log.',
             'Technical exception: the people who operate the server and database (the hosting provider and the operator of this deployment) can technically reach stored files and the database. Use ATHAR only if you trust the operator of the deployment you are using.',
           ]},
           { h: '4. Third-party services', list: [
             'AI provider: when AI features are enabled and they run (when you trigger them, automatically on the case Overview screen the first time it is opened, and on the Evidence map screen each time it is opened), extracted text, chat messages (a sample for long chats), image descriptions, image content (for authenticity triage and descriptions), file names, hashes, EXIF details and case names are sent to the configured AI provider (DeepSeek by default) for processing. If no AI key is configured, nothing is sent and the features are disabled.',
-            'E-mail provider: when e-mail is configured, your e-mail address and the verification / password-reset links are sent through the operator\'s SMTP provider.',
             'Text extraction (OCR): if the server has no local OCR engine, an image you ask to read is sent to the AI provider. Search by meaning, if enabled, sends your query and chunks of your own evidence text to the configured embeddings provider. Both only happen when you use those features.',
             'Do not upload evidence you are not allowed to process with such providers.',
           ]},
@@ -39,7 +38,7 @@ const Pages = (() => {
             'You can delete your account yourself from My account (password required). Your name, e-mail, username, password hash and contact messages are erased; cases only you belong to are archived, cases others belong to are handed to the member who joined first. The audit log still contains the name/e-mail recorded at the time of each event. For access or correction requests use the Contact page.',
           ]},
           { h: '6. Security measures', list: [
-            'Passwords are hashed with salted PBKDF2-SHA256; sign-in attempts are rate-limited; accounts must verify their e-mail before use; changing a password ends all other sessions.',
+            'Passwords are hashed with salted PBKDF2-SHA256; sign-in attempts are rate-limited; new accounts must be approved by an administrator before use; changing a password ends all other sessions.',
             'Uploads are checked for blocked executable types, mismatched content and size limits. File content shown on screen is always treated as plain text.',
             'No system is perfectly secure. If you believe your account or data is affected, contact the operator immediately.',
           ]},
@@ -50,7 +49,7 @@ const Pages = (() => {
         updated: 'آخر تحديث: 1 نوفمبر 2026',
         sections: [
           { h: '١. البيانات التي تجمعها أثر', list: [
-            'بيانات الحساب: اسمك وبريدك الإلكتروني (لتسجيل الدخول وتفعيل الحساب) ونسخة مشفّرة (PBKDF2 مع ملح عشوائي) من كلمة المرور. كلمة المرور نفسها لا تُحفظ أبداً.',
+            'بيانات الحساب: اسمك وبريدك الإلكتروني (تُستخدم كاسم دخول فقط؛ أثر لا ترسل رسائل بريد) ونسخة مشفّرة (PBKDF2 مع ملح عشوائي) من كلمة المرور. كلمة المرور نفسها لا تُحفظ أبداً.',
             'بيانات القضايا والأدلة التي تُدخلها أو ترفعها: تفاصيل القضية وملفات الأدلة وبصمات SHA-256 والعناوين والأوصاف وبيانات EXIF والنصوص المستخرجة من المستندات والرسائل المحلَّلة من ملفات المحادثات.',
             'سجل التدقيق (سلسلة العهدة): من فعل ماذا ومتى - تسجيل الدخول ومحاولاته الفاشلة والرفع والاطلاع والتنزيل والتعديل والحذف والتحليل وتصدير التقارير - مع أسماء الملفات وبصماتها. لا يُسجَّل عنوان IP.',
             'الرسائل التي ترسلها عبر نموذج التواصل (الاسم والبريد والعنوان والرسالة).',
@@ -63,12 +62,11 @@ const Pages = (() => {
           { h: '٣. من يستطيع الوصول إلى بياناتك', list: [
             'أعضاء القضية فقط يستطيعون فتحها والاطلاع على أدلتها. كل طلب يُفحص في الخادم، والقضية التي لست عضواً فيها تبدو تماماً كأنها غير موجودة.',
             'مالك القضية (منشئها) يستطيع مشاركتها مع مستخدم موثَّق بكتابة بريده الإلكتروني بدقة، ويستطيع إزالة الأعضاء. البحث والتشابه وتنبيهات القضايا المتقاطعة تستخدم دائماً القضايا التي أنت عضو فيها فقط.',
-            'مسؤولو المنصة يديرون الحسابات (إنشاء المستخدمين وتفعيل الحسابات وإعادة تعيين كلمات المرور) ويقرؤون رسائل نموذج التواصل. صفة المسؤول لا تمنح الاطلاع على قضايا المستخدمين الآخرين وأدلتهم؛ المسؤول يرى القضية فقط إذا أضافه مالكها عضواً، ويُسجَّل ذلك في سجل تدقيق القضية.',
+            'مسؤولو المنصة يديرون الحسابات (الموافقة على طلبات التسجيل أو رفضها، وإنشاء المستخدمين، وإعادة تعيين كلمات المرور) ويقرؤون رسائل نموذج التواصل. صفة المسؤول لا تمنح الاطلاع على قضايا المستخدمين الآخرين وأدلتهم؛ المسؤول يرى القضية فقط إذا أضافه مالكها عضواً، ويُسجَّل ذلك في سجل تدقيق القضية.',
             'استثناء تقني: من يشغّلون الخادم وقاعدة البيانات (مزوّد الاستضافة ومشغّل هذه النسخة) يستطيعون تقنياً الوصول إلى الملفات المخزّنة وقاعدة البيانات. استخدم أثر فقط إذا كنت تثق بمشغّل النسخة التي تستخدمها.',
           ]},
           { h: '٤. خدمات الأطراف الثالثة', list: [
             'مزوّد الذكاء الاصطناعي: عند تفعيل ميزات الذكاء الاصطناعي وتشغيلها (عند تشغيلها منك، أو تلقائياً في شاشة النظرة العامة عند أول فتح لها، وفي شاشة خريطة الأدلة عند كل فتح لها)، تُرسَل النصوص المستخرجة ورسائل المحادثات (عينة منها للمحادثات الطويلة) ووصف الصور ومحتوى الصور (لفحص الأصالة والوصف) وأسماء الملفات والبصمات وتفاصيل EXIF وأسماء القضايا إلى مزوّد الذكاء الاصطناعي المضبوط (DeepSeek افتراضياً) لمعالجتها. إذا لم يُضبط مفتاح الذكاء الاصطناعي فلا يُرسل شيء وتبقى الميزات معطّلة.',
-            'مزوّد البريد: عند ضبط البريد الإلكتروني يُرسَل بريدك وروابط التفعيل/استعادة كلمة المرور عبر خادم SMTP الخاص بالمشغّل.',
             'استخراج النص (OCR): إذا لم يوجد محرك OCR محلي على الخادم تُرسَل الصورة التي تطلب قراءتها إلى مزوّد الذكاء الاصطناعي. والبحث بالمعنى، إن فُعّل، يرسل استعلامك وأجزاء من نصوص أدلتك إلى مزوّد التضمين المضبوط. وكلاهما لا يحدث إلا عند استخدامك لهاتين الميزتين.',
             'لا ترفع أدلة غير مسموح لك بمعالجتها لدى هذه الجهات.',
           ]},
@@ -79,7 +77,7 @@ const Pages = (() => {
             'يمكنك حذف حسابك بنفسك من «حسابي» (يلزم إدخال كلمة المرور). يُمحى اسمك وبريدك واسم المستخدم ونسخة كلمة المرور ورسائل التواصل؛ وتُؤرشف القضايا التي أنت وحدك فيها، وتنتقل القضايا التي يشارك فيها آخرون لأول عضو انضم إليها. ويبقى سجل التدقيق محتوياً على الاسم/البريد المسجَّل وقت كل حدث. لطلبات الاطلاع أو التصحيح استخدم صفحة التواصل.',
           ]},
           { h: '٦. إجراءات الأمان', list: [
-            'تُشفَّر كلمات المرور بـ PBKDF2-SHA256 مع ملح، وتُقيَّد محاولات الدخول، ويجب تفعيل البريد قبل استخدام الحساب، وتغيير كلمة المرور ينهي كل الجلسات الأخرى.',
+            'تُشفَّر كلمات المرور بـ PBKDF2-SHA256 مع ملح، وتُقيَّد محاولات الدخول، ويلزم موافقة المسؤول على أي حساب جديد قبل استخدامه، وتغيير كلمة المرور ينهي كل الجلسات الأخرى.',
             'تُفحص الملفات المرفوعة لمنع الأنواع التنفيذية وعدم تطابق المحتوى والحجم المفرط. وأي محتوى ملف يُعرض على الشاشة يُعامل دائماً كنص عادي.',
             'لا يوجد نظام آمن تماماً. إذا اعتقدت أن حسابك أو بياناتك تأثرت فتواصل مع المشغّل فوراً.',
           ]},

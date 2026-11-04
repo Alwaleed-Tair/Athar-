@@ -100,8 +100,8 @@ const Account = (() => {
             <input id="acc-email" type="text" value="${UI.escapeHtml(me.email || me.username)}" readonly dir="ltr" />
             <div class="mt-1">
               ${me.email_verified
-                ? `<span class="ui-badge badge-active">${UI.icon('check', '', 12)} ${I18n.t('accountVerified')}</span>`
-                : `<span class="ui-badge badge-pending">${I18n.t('accountNotVerified')}</span>`}
+                ? `<span class="ui-badge badge-active">${UI.icon('check', '', 12)} ${I18n.t('accountApproved')}</span>`
+                : `<span class="ui-badge badge-pending">${I18n.t('accountPendingShort')}</span>`}
               <span class="text-muted text-xs">${I18n.t('accountEmailReadonly')}</span>
             </div>
           </div>

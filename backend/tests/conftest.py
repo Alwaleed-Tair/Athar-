@@ -10,30 +10,21 @@ os.environ["ATHAR_ADMIN_USERNAME"] = "admin"
 os.environ["ATHAR_ADMIN_PASSWORD"] = "Adm1n!Secret#1"
 os.environ["ATHAR_JWT_SECRET"] = "test-secret-" + "x" * 40
 os.environ.pop("ATHAR_AI_KEY", None)
-os.environ.pop("ATHAR_SMTP_HOST", None)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, mailer, ratelimit
+from app import config, ratelimit
 from app.database import init_db
 from app.main import app
-from helpers import SENT, login as _login
+from helpers import login as _login
 
 init_db()
 
 
 @pytest.fixture(autouse=True)
-def _mail_capture(monkeypatch):
-    SENT.clear()
-
-    def fake_send(to, subject, text_body, html_body=None, reply_to=None):
-        SENT.append({"to": to, "subject": subject, "body": text_body})
-        return "SENT"
-
-    monkeypatch.setattr(mailer, "send_mail", fake_send)
-    monkeypatch.setattr(mailer, "delivery_available", lambda: True)
+def _reset_limits():
     ratelimit.reset_all()
     yield
 

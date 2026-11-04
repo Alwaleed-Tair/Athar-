@@ -2,6 +2,18 @@
 // edit/delete, conversations, search, reports, contact, legal pages.
 // Loaded after i18n.js; merges into the same dictionary.
 I18n.extend('en', {
+  // approval flow (no e-mail)
+  err_PENDING_APPROVAL: 'Your account is waiting for an administrator\'s approval. You will be able to sign in once it is approved.',
+  pendingCreatedTitle: 'Request received', pendingCreatedBody: 'Your account {email} was created and is waiting for an administrator to approve it.',
+  pendingTitle: 'Waiting for approval', pendingBody: 'The account {email} has not been approved by an administrator yet.',
+  pendingHelp: 'Nothing is sent by e-mail. Once an administrator approves your request, sign in with the same e-mail and password. If it takes long, contact the administrator.',
+  accountApproved: 'Approved', accountPendingShort: 'Awaiting approval', accountStatus: 'Account status',
+  pendingRequests: 'Registration requests', pendingNone: 'No requests are waiting.',
+  pendingExplain: 'These people created an account and cannot sign in until you approve them.',
+  approve: 'Approve', reject: 'Reject', rejectConfirm: 'Reject the request of {name}? The account is removed and they may apply again.',
+  accountApprovedToast: 'Account approved.', requestRejectedToast: 'Request rejected.',
+  contactSentStored: 'Your message was saved and the administrators will see it in the Users screen.',
+
   reportReadyTitle: 'Report is ready', reportReadyBody: 'Tap "Open report" to view it in your phone\'s PDF viewer, or "Download" to save it.', reportOpen: 'Open report', reportSave: 'Download', reportLinkNote: 'The link works for 3 minutes. If it does not open, use "Download" and open the file from your Files/Downloads app. On iPhone, use Safari.',
   mapAiSavedAt: 'AI relationships were generated on {date}. They are saved and only regenerated when the evidence changes or you ask.', mapRefresh: 'Re-run AI analysis', mapRefreshing: 'Re-running the AI analysis…',
   resetTokenInvalid: 'This password-reset link is not valid or was already used. Request a new one from "Forgot password".', resetTokenExpired: 'This password-reset link has expired (links last one hour). Request a new one.',
@@ -155,7 +167,7 @@ I18n.extend('en', {
   contactCatInquiry: 'Inquiry', contactCatTechnical: 'Technical problem', contactCatSuggestion: 'Suggestion', contactCatOther: 'Other',
   contactSubject: 'Subject', contactMessage: 'Details', contactSend: 'Send message', contactSending: 'Sending…',
   contactNoEvidenceWarning: 'Do not include case details, evidence or personal data of other people in this message.',
-  contactSentTitle: 'Message received', contactSentStored: 'Your message was saved and the administrators will see it. No e-mail copy was sent.',
+  contactSentTitle: 'Message received', 
   contactSentEmailed: 'Your message was saved and e-mailed to the team.',
   contactErrName: 'Enter your name.', contactErrEmail: 'Enter a valid e-mail address.', contactErrSubject: 'Enter a subject (3 characters or more).',
   contactErrMessage: 'Please describe your message (10 characters or more).',
@@ -163,6 +175,18 @@ I18n.extend('en', {
 });
 
 I18n.extend('ar', {
+  // approval flow (no e-mail)
+  err_PENDING_APPROVAL: 'حسابك بانتظار موافقة المسؤول. ستتمكن من الدخول بعد الموافقة عليه.',
+  pendingCreatedTitle: 'تم استلام طلبك', pendingCreatedBody: 'أُنشئ حسابك {email} وهو الآن بانتظار موافقة المسؤول.',
+  pendingTitle: 'بانتظار الموافقة', pendingBody: 'لم يوافق المسؤول بعد على الحساب {email}.',
+  pendingHelp: 'لا يُرسل شيء بالبريد الإلكتروني. بعد موافقة المسؤول ادخل بنفس البريد وكلمة المرور. وإن تأخرت الموافقة فتواصل مع المسؤول.',
+  accountApproved: 'معتمد', accountPendingShort: 'بانتظار الموافقة', accountStatus: 'حالة الحساب',
+  pendingRequests: 'طلبات التسجيل', pendingNone: 'لا توجد طلبات بانتظار الموافقة.',
+  pendingExplain: 'هؤلاء أنشأوا حساباً ولا يستطيعون الدخول حتى توافق عليهم.',
+  approve: 'قبول', reject: 'رفض', rejectConfirm: 'هل تريد رفض طلب {name}؟ سيُحذف الحساب ويمكنه التقديم من جديد.',
+  accountApprovedToast: 'تمت الموافقة على الحساب.', requestRejectedToast: 'تم رفض الطلب.',
+  contactSentStored: 'حُفظت رسالتك وسيطّلع عليها مسؤولو المنصة في شاشة المستخدمين.',
+
   reportReadyTitle: 'التقرير جاهز', reportReadyBody: 'اضغط «فتح التقرير» لعرضه في قارئ PDF في جوالك، أو «تنزيل» لحفظه.', reportOpen: 'فتح التقرير', reportSave: 'تنزيل', reportLinkNote: 'الرابط يعمل لمدة 3 دقائق. إن لم يفتح فاضغط «تنزيل» ثم افتح الملف من تطبيق الملفات/التنزيلات. وفي iPhone استخدم متصفح Safari.',
   mapAiSavedAt: 'ولّد الذكاء الاصطناعي هذه العلاقات في {date}. هي محفوظة ولا تُعاد إلا عند تغيّر الأدلة أو بطلبك.', mapRefresh: 'إعادة التحليل بالذكاء الاصطناعي', mapRefreshing: 'جارٍ إعادة التحليل بالذكاء الاصطناعي…',
   resetTokenInvalid: 'رابط استعادة كلمة المرور غير صالح أو سبق استخدامه. اطلب رابطاً جديداً من «نسيت كلمة المرور».', resetTokenExpired: 'انتهت صلاحية رابط استعادة كلمة المرور (مدته ساعة واحدة). اطلب رابطاً جديداً.',
@@ -304,7 +328,7 @@ I18n.extend('ar', {
   contactCatInquiry: 'استفسار', contactCatTechnical: 'مشكلة تقنية', contactCatSuggestion: 'اقتراح', contactCatOther: 'أخرى',
   contactSubject: 'عنوان الرسالة', contactMessage: 'التفاصيل', contactSend: 'إرسال الرسالة', contactSending: 'جارٍ الإرسال…',
   contactNoEvidenceWarning: 'لا تُضمّن في الرسالة تفاصيل قضايا أو أدلة أو بيانات شخصية لآخرين.',
-  contactSentTitle: 'تم استلام رسالتك', contactSentStored: 'حُفظت رسالتك وسيطّلع عليها مسؤولو المنصة. لم تُرسل نسخة بالبريد الإلكتروني.',
+  contactSentTitle: 'تم استلام رسالتك', 
   contactSentEmailed: 'حُفظت رسالتك وأُرسلت بالبريد الإلكتروني إلى الفريق.',
   contactErrName: 'أدخل اسمك.', contactErrEmail: 'أدخل بريداً إلكترونياً صالحاً.', contactErrSubject: 'أدخل عنواناً (3 أحرف أو أكثر).',
   contactErrMessage: 'يرجى كتابة تفاصيل رسالتك (10 أحرف أو أكثر).',

@@ -32,9 +32,9 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> dic
     # issued before it.
     if int(payload.get("tv") or 0) != int(row["token_version"] or 0):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    # Unverified accounts must not reach any protected function.
+    # Accounts awaiting administrator approval must not reach any protected function.
     if not row["email_verified"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="EMAIL_NOT_VERIFIED")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PENDING_APPROVAL")
 
     return {
         "id": row["id"],

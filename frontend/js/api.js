@@ -95,12 +95,8 @@ const Api = (() => {
     login: (username, password) => request('POST', '/api/auth/login', { body: { username, password } }),
     register: (fullName, username, password) =>
       request('POST', '/api/auth/register', { body: { full_name: fullName, username, password } }),
-    verifyEmail: (token) => request('POST', '/api/auth/verify-email', { body: { token } }),
-    resendVerification: (email) => request('POST', '/api/auth/resend-verification', { body: { email } }),
     me: () => request('GET', '/api/auth/me'),
     updateProfile: (fullName, handle) => request('PATCH', '/api/auth/me', { body: { full_name: fullName, handle } }),
-    forgotPassword: (email) => request('POST', '/api/auth/forgot-password', { body: { email } }),
-    resetPassword: (token, newPassword) => request('POST', '/api/auth/reset-password', { body: { token, new_password: newPassword } }),
     deleteAccount: (password) => request('POST', '/api/auth/delete-account', { body: { password } }),
     runOcr: (id) => request('POST', `/api/evidence/${id}/ocr`),
     semanticSearch: (q, caseId) => {
@@ -110,9 +106,11 @@ const Api = (() => {
     },
     changePassword: (currentPassword, newPassword) =>
       request('POST', '/api/auth/change-password', { body: { current_password: currentPassword, new_password: newPassword } }),
+    pendingUsers: () => request('GET', '/api/users/pending'),
+    approveUser: (userId) => request('POST', `/api/users/${userId}/approve`),
+    rejectUser: (userId) => request('POST', `/api/users/${userId}/reject`),
     createUser: (payload) => request('POST', '/api/users', { body: payload }),
     listUsers: () => request('GET', '/api/users'),
-    adminVerifyUser: (userId) => request('POST', `/api/users/${userId}/verify`),
     resetUserPassword: (userId, newPassword) =>
       request('POST', `/api/users/${userId}/password`, { body: { new_password: newPassword } }),
 

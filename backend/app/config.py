@@ -98,29 +98,6 @@ SUPPORTED_LANGS = {"en", "ar"}
 DEFAULT_LANG = "en"
 
 
-# --- Public URL / e-mail ------------------------------------------------
-# Base URL used to build the e-mail verification link. Leave empty to
-# derive it from the incoming request (works behind Render's proxy).
-PUBLIC_URL = os.environ.get("ATHAR_PUBLIC_URL", "").rstrip("/")
-
-# Outgoing e-mail (verification + contact form notifications). Plain SMTP
-# so it works with any provider (Brevo, Mailgun, Gmail app password...).
-# Nothing is faked: if SMTP_HOST is empty, mail is NOT sent and the API
-# says so (see mailer.py); an admin can then activate accounts by hand.
-SMTP_HOST = os.environ.get("ATHAR_SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("ATHAR_SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("ATHAR_SMTP_USER", "")
-SMTP_PASSWORD = os.environ.get("ATHAR_SMTP_PASSWORD", "")
-SMTP_FROM = os.environ.get("ATHAR_SMTP_FROM", SMTP_USER)
-SMTP_SECURITY = os.environ.get("ATHAR_SMTP_SECURITY", "starttls").lower()  # starttls | ssl | none
-# Development only: print outgoing mail (incl. verification links) to the
-# server log instead of sending. Never enable in production.
-MAIL_CONSOLE = os.environ.get("ATHAR_MAIL_CONSOLE", "").lower() in ("1", "true", "yes")
-CONTACT_TO = os.environ.get("ATHAR_CONTACT_TO", "")
-
-EMAIL_TOKEN_TTL_HOURS = int(os.environ.get("ATHAR_EMAIL_TOKEN_TTL_HOURS", "24"))
-EMAIL_RESEND_COOLDOWN_SECONDS = int(os.environ.get("ATHAR_EMAIL_RESEND_COOLDOWN", "60"))
-
 # --- Login throttling ---------------------------------------------------
 LOGIN_MAX_FAILURES = int(os.environ.get("ATHAR_LOGIN_MAX_FAILURES", "5"))
 LOGIN_LOCK_SECONDS = int(os.environ.get("ATHAR_LOGIN_LOCK_SECONDS", "900"))

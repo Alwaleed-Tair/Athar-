@@ -1,5 +1,5 @@
 """Shared helpers (kept out of conftest so tests and fixtures share ONE module instance)."""
-SENT = []
+
 
 
 def login(client, username, password):

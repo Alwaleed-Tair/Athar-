@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from .. import audit, config, mailer, ratelimit, security
+from .. import audit, config, ratelimit, security
 from ..database import get_conn
 from ..deps import get_current_user, require_admin
 
@@ -83,55 +83,6 @@ def _user_public(row) -> dict:
     }
 
 
-# --- E-mail verification --------------------------------------------------
-
-def _issue_email(request: Request, user_row, purpose: str) -> str:
-    """Creates a fresh single-use token (older unused ones of the same
-    purpose are revoked) and mails the link. purpose: VERIFY | RESET.
-    Returns SENT/CONSOLE/NOT_CONFIGURED/FAILED."""
-    raw = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc)
-    ttl = timedelta(hours=config.EMAIL_TOKEN_TTL_HOURS) if purpose == "VERIFY" else timedelta(hours=1)
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE email_tokens SET used_at = ? WHERE user_id = ? AND purpose = ? AND used_at IS NULL",
-            (now.strftime(config.TIMESTAMP_FORMAT), user_row["id"], purpose),
-        )
-        conn.execute(
-            "INSERT INTO email_tokens (user_id, token_hash, purpose, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-            (user_row["id"], security.hash_token(raw), purpose,
-             now.strftime(config.TIMESTAMP_FORMAT), (now + ttl).strftime(config.TIMESTAMP_FORMAT)),
-        )
-        conn.commit()
-
-    base = config.PUBLIC_URL or str(request.base_url).rstrip("/")
-    name = user_row["full_name"] or user_row["email"]
-    if purpose == "VERIFY":
-        link = f"{base}/?verify={raw}"
-        hours = config.EMAIL_TOKEN_TTL_HOURS
-        text = (
-            f"مرحباً {name}،\nلتفعيل حسابك في منصة أثر (ATHAR) افتح الرابط التالي (صالح لمدة {hours} ساعة):\n{link}\n\n"
-            "إذا لم تطلب إنشاء هذا الحساب فتجاهل هذه الرسالة.\n\n------------------------------\n"
-            f"Hello {name},\nTo activate your ATHAR account open this link (valid for {hours} hours):\n{link}\n\n"
-            "If you did not create this account, ignore this message.\n"
-        )
-        subject = "تفعيل حساب أثر / Activate your ATHAR account"
-    else:
-        link = f"{base}/?reset={raw}"
-        text = (
-            f"مرحباً {name}،\nطُلب تعيين كلمة مرور جديدة لحسابك في أثر. افتح الرابط التالي (صالح لمدة ساعة واحدة ويعمل مرة واحدة):\n{link}\n\n"
-            "إذا لم تطلب ذلك فتجاهل هذه الرسالة؛ كلمة مرورك لم تتغير.\n\n------------------------------\n"
-            f"Hello {name},\nA new password was requested for your ATHAR account. Open this link (valid 1 hour, single use):\n{link}\n\n"
-            "If you did not request this, ignore this message; your password has not changed.\n"
-        )
-        subject = "إعادة تعيين كلمة المرور / Reset your ATHAR password"
-    return mailer.send_mail(user_row["email"], subject, text)
-
-
-def _issue_verification_email(request: Request, user_row) -> str:
-    return _issue_email(request, user_row, "VERIFY")
-
-
 # --- Login ---------------------------------------------------------------
 
 class LoginRequest(BaseModel):
@@ -184,9 +135,10 @@ def login(body: LoginRequest, request: Request, lang: str = Query(default="en"))
 
     ratelimit.clear_login_failures(keys[0])
 
-    # Correct password but e-mail not yet verified: no session is issued.
+    # Correct password but the account has not been approved by an administrator yet:
+    # no session is issued.
     if not row["email_verified"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="EMAIL_NOT_VERIFIED")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PENDING_APPROVAL")
 
     token = security.create_access_token(row["id"], row["username"], row["role"], row["token_version"])
     audit.append_event("USER_LOGIN", actor_id=row["id"], params={"username": row["username"]})
@@ -244,65 +196,7 @@ def register(body: RegisterRequest, request: Request):
         actor_id=row["id"],
         params={"username": email, "full_name": full_name},
     )
-    delivery = _issue_verification_email(request, row)
-    return {"status": "VERIFICATION_REQUIRED", "email": email, "email_delivery": delivery}
-
-
-class VerifyRequest(BaseModel):
-    token: str = Field(min_length=10, max_length=200)
-
-
-@router.post("/auth/verify-email")
-def verify_email(body: VerifyRequest, request: Request):
-    if not ratelimit.allow(f"verify:{_client_ip(request)}", 30, 3600):
-        raise HTTPException(status_code=429, detail="TOO_MANY_ATTEMPTS")
-    token_hash = security.hash_token(body.token.strip())
-    now = _now()
-    with get_conn() as conn:
-        t = conn.execute(
-            "SELECT * FROM email_tokens WHERE token_hash = ? AND purpose = 'VERIFY'", (token_hash,)
-        ).fetchone()
-        if not t:
-            raise HTTPException(status_code=400, detail="TOKEN_INVALID")
-        user = conn.execute("SELECT * FROM users WHERE id = ?", (t["user_id"],)).fetchone()
-        if user and user["email_verified"]:
-            return {"status": "ALREADY_VERIFIED"}
-        if t["used_at"]:
-            raise HTTPException(status_code=400, detail="TOKEN_INVALID")
-        if t["expires_at"] < now:
-            raise HTTPException(status_code=400, detail="TOKEN_EXPIRED")
-        conn.execute("UPDATE email_tokens SET used_at = ? WHERE id = ?", (now, t["id"]))
-        conn.execute("UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?", (now, t["user_id"]))
-        conn.commit()
-
-    audit.append_event("EMAIL_VERIFIED", actor_id=t["user_id"], params={"username": user["username"]})
-    return {"status": "VERIFIED"}
-
-
-class ResendRequest(BaseModel):
-    email: str = Field(max_length=200)
-
-
-@router.post("/auth/resend-verification")
-def resend_verification(body: ResendRequest, request: Request):
-    """Always answers the same way whether or not the address has an
-    account, so it can't be used to discover registered e-mails."""
-    email = body.email.strip().lower()
-    if not ratelimit.allow(f"resend-ip:{_client_ip(request)}", 10, 3600):
-        raise HTTPException(status_code=429, detail="TOO_MANY_ATTEMPTS")
-    if not ratelimit.allow(f"resend:{email}", 1, config.EMAIL_RESEND_COOLDOWN_SECONDS):
-        raise HTTPException(
-            status_code=429, detail="RESEND_TOO_SOON",
-            headers={"Retry-After": str(config.EMAIL_RESEND_COOLDOWN_SECONDS)},
-        )
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM users WHERE email = ? COLLATE NOCASE AND email_verified = 0", (email,)
-        ).fetchone()
-    delivery = "SENT" if mailer.delivery_available() else "NOT_CONFIGURED"
-    if row:
-        delivery = _issue_verification_email(request, row)
-    return {"status": "ACCEPTED", "email_delivery": delivery}
+    return {"status": "PENDING_APPROVAL", "email": email}
 
 
 # --- Current user / account management ------------------------------------
@@ -378,67 +272,6 @@ def change_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
     # Every other session is now invalid; hand back a fresh token so this one continues.
     return {"status": "PASSWORD_CHANGED",
             "token": security.create_access_token(user["id"], row["username"], row["role"], new_version)}
-
-
-# --- Password reset by e-mail ---------------------------------------------------
-
-class ForgotRequest(BaseModel):
-    email: str = Field(max_length=200)
-
-
-@router.post("/auth/forgot-password")
-def forgot_password(body: ForgotRequest, request: Request):
-    """Always answers the same way whether or not the address has an account."""
-    email = body.email.strip().lower()
-    if not ratelimit.allow(f"forgot-ip:{_client_ip(request)}", 10, 3600):
-        raise HTTPException(status_code=429, detail="TOO_MANY_ATTEMPTS")
-    if not ratelimit.allow(f"forgot:{email}", 1, config.EMAIL_RESEND_COOLDOWN_SECONDS):
-        raise HTTPException(status_code=429, detail="RESEND_TOO_SOON",
-                            headers={"Retry-After": str(config.EMAIL_RESEND_COOLDOWN_SECONDS)})
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM users WHERE email != '' AND email = ? COLLATE NOCASE AND deleted_at IS NULL", (email,)
-        ).fetchone()
-    delivery = "SENT" if mailer.delivery_available() else "NOT_CONFIGURED"
-    if row:
-        delivery = _issue_email(request, row, "RESET")
-    return {"status": "ACCEPTED", "email_delivery": delivery}
-
-
-class ResetRequest(BaseModel):
-    token: str = Field(min_length=10, max_length=200)
-    new_password: str = Field(max_length=500)
-
-
-@router.post("/auth/reset-password")
-def reset_password(body: ResetRequest, request: Request):
-    if not ratelimit.allow(f"reset:{_client_ip(request)}", 20, 3600):
-        raise HTTPException(status_code=429, detail="TOO_MANY_ATTEMPTS")
-    now = _now()
-    with get_conn() as conn:
-        t = conn.execute(
-            "SELECT * FROM email_tokens WHERE token_hash = ? AND purpose = 'RESET'",
-            (security.hash_token(body.token.strip()),),
-        ).fetchone()
-        if not t or t["used_at"]:
-            raise HTTPException(status_code=400, detail="TOKEN_INVALID")
-        if t["expires_at"] < now:
-            raise HTTPException(status_code=400, detail="TOKEN_EXPIRED")
-        user = conn.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (t["user_id"],)).fetchone()
-        if not user:
-            raise HTTPException(status_code=400, detail="TOKEN_INVALID")
-    _require_strong_password(body.new_password)
-    with get_conn() as conn:
-        conn.execute("UPDATE email_tokens SET used_at = ? WHERE id = ?", (now, t["id"]))
-        # Receiving the link proves control of the mailbox, so the e-mail is verified too.
-        conn.execute(
-            "UPDATE users SET password_hash = ?, token_version = token_version + 1, email_verified = 1, updated_at = ? WHERE id = ?",
-            (security.hash_password(body.new_password), now, user["id"]),
-        )
-        conn.commit()
-    ratelimit.clear_login_failures(f"u:{user['username'].lower()}")
-    audit.append_event("PASSWORD_RESET_BY_EMAIL", actor_id=user["id"], params={"username": user["username"]})
-    return {"status": "PASSWORD_RESET"}
 
 
 # --- Self-service account deletion ---------------------------------------------------
@@ -561,21 +394,51 @@ def list_users(admin: dict = Depends(require_admin)):
     return [{**dict(r), "email_verified": bool(r["email_verified"])} for r in rows]
 
 
-@router.post("/users/{user_id}/verify")
-def admin_verify_user(user_id: int, admin: dict = Depends(require_admin)):
-    """Manual activation. This exists for deployments with no outgoing
-    mail server configured; it is logged in the audit trail."""
+@router.get("/users/pending")
+def pending_users(admin: dict = Depends(require_admin)):
+    """Self-registered accounts waiting for an administrator's decision."""
     with get_conn() as conn:
-        row = conn.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+        rows = conn.execute(
+            "SELECT id, username, handle, full_name, email, created_at FROM users "
+            "WHERE email_verified = 0 AND deleted_at IS NULL ORDER BY created_at"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/users/{user_id}/approve")
+def approve_user(user_id: int, admin: dict = Depends(require_admin)):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, username FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
         conn.execute("UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?", (_now(), user_id))
         conn.commit()
     audit.append_event(
-        "EMAIL_VERIFIED_BY_ADMIN", actor_id=admin["id"],
+        "ACCOUNT_APPROVED", actor_id=admin["id"],
         params={"actor_username": admin["username"], "target_username": row["username"]},
     )
-    return {"id": user_id, "email_verified": True}
+    return {"id": user_id, "approved": True}
+
+
+@router.post("/users/{user_id}/reject")
+def reject_user(user_id: int, admin: dict = Depends(require_admin)):
+    """Declines a registration request. Only accounts that were never approved
+    can be rejected; the (empty) account is removed so the person may apply again."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, username FROM users WHERE id = ? AND email_verified = 0 AND deleted_at IS NULL", (user_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Pending request not found")
+        conn.execute("DELETE FROM users WHERE id = ? AND email_verified = 0", (user_id,))
+        conn.commit()
+    audit.append_event(
+        "ACCOUNT_REJECTED", actor_id=admin["id"],
+        params={"actor_username": admin["username"], "target_username": row["username"]},
+    )
+    return {"id": user_id, "rejected": True}
 
 
 class ResetPasswordRequest(BaseModel):

@@ -2,85 +2,77 @@ import re
 import sqlite3
 
 from app import config
-from helpers import SENT, login as _login
-
-
-def _token_from_mail():
-    m = re.search(r"\?verify=([A-Za-z0-9_\-]+)", SENT[-1]["body"])
-    assert m, SENT[-1]["body"]
-    return m.group(1)
+from helpers import login as _login
 
 
 def _register(client, email, name="New User", pw="Str0ng!Pass#9"):
     return client.post("/api/auth/register", json={"full_name": name, "username": email, "password": pw})
 
 
-def test_register_requires_verification(client):
+def _uid(email):
+    return sqlite3.connect(str(config.DB_PATH)).execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
+
+
+def test_register_creates_pending_account_without_session(client):
     r = _register(client, "reg1@gmail.com")
-    assert r.status_code == 201
-    assert r.json()["status"] == "VERIFICATION_REQUIRED" and "token" not in r.json()
-    assert SENT and SENT[-1]["to"] == "reg1@gmail.com"
-    # correct password but unverified -> no session
+    assert r.status_code == 201 and r.json()["status"] == "PENDING_APPROVAL" and "token" not in r.json()
     login = client.post("/api/auth/login", json={"username": "reg1@gmail.com", "password": "Str0ng!Pass#9"})
-    assert login.status_code == 403 and login.json()["detail"] == "EMAIL_NOT_VERIFIED"
-    # verify, then login works
-    v = client.post("/api/auth/verify-email", json={"token": _token_from_mail()})
-    assert v.status_code == 200 and v.json()["status"] == "VERIFIED"
-    assert client.post("/api/auth/login", json={"username": "reg1@gmail.com", "password": "Str0ng!Pass#9"}).status_code == 200
+    assert login.status_code == 403 and login.json()["detail"] == "PENDING_APPROVAL"
+    # wrong password still looks like any wrong password (no account probing)
+    assert client.post("/api/auth/login", json={"username": "reg1@gmail.com", "password": "nope"}).status_code == 401
 
 
 def test_register_validation(client):
     assert _register(client, "x@yahoo.com").status_code == 400          # domain not allowed
     assert _register(client, "weak1@gmail.com", pw="weakpass").status_code == 400
-    assert _register(client, "reg1@gmail.com").status_code == 400       # duplicate
+    _register(client, "dupe1@gmail.com")
+    assert _register(client, "dupe1@gmail.com").status_code == 400      # duplicate
 
 
-def test_token_single_use_invalid_and_expired(client):
-    _register(client, "reg2@gmail.com")
-    tok = _token_from_mail()
-    assert client.post("/api/auth/verify-email", json={"token": "not-a-real-token-123"}).json()["detail"] == "TOKEN_INVALID"
-    assert client.post("/api/auth/verify-email", json={"token": tok}).status_code == 200
-    # second use of an already-verified account's token is harmless
-    assert client.post("/api/auth/verify-email", json={"token": tok}).json()["status"] == "ALREADY_VERIFIED"
-
-    _register(client, "reg3@gmail.com")
-    tok3 = _token_from_mail()
-    con = sqlite3.connect(str(config.DB_PATH))
-    con.execute("UPDATE email_tokens SET expires_at = '2000-01-01T00:00:00.000000' WHERE token_hash IN "
-                "(SELECT token_hash FROM email_tokens ORDER BY id DESC LIMIT 1)")
-    con.commit(); con.close()
-    r = client.post("/api/auth/verify-email", json={"token": tok3})
-    assert r.status_code == 400 and r.json()["detail"] == "TOKEN_EXPIRED"
-    # a new link can be requested, and it works; the old one is revoked
-    n = len(SENT)
-    assert client.post("/api/auth/resend-verification", json={"email": "reg3@gmail.com"}).status_code == 200
-    assert len(SENT) == n + 1
-    assert client.post("/api/auth/verify-email", json={"token": tok3}).status_code == 400
-    assert client.post("/api/auth/verify-email", json={"token": _token_from_mail()}).json()["status"] == "VERIFIED"
-
-
-def test_resend_is_generic_and_throttled(client):
-    a = client.post("/api/auth/resend-verification", json={"email": "ghost@gmail.com"})
-    assert a.status_code == 200 and a.json()["status"] == "ACCEPTED"
-    assert not any(m["to"] == "ghost@gmail.com" for m in SENT)          # nothing sent, same answer
-    again = client.post("/api/auth/resend-verification", json={"email": "ghost@gmail.com"})
-    assert again.status_code == 429
-
-
-def test_unverified_token_cannot_use_api(client, admin):
-    # even a validly signed token is refused while the account is unverified
+def test_pending_token_cannot_use_api(client):
     from app import security
     _register(client, "reg4@gmail.com")
-    uid = sqlite3.connect(str(config.DB_PATH)).execute("SELECT id FROM users WHERE email='reg4@gmail.com'").fetchone()[0]
-    forged = security.create_access_token(uid, "reg4@gmail.com", "INVESTIGATOR", 0)
-    assert client.get("/api/cases", headers={"Authorization": f"Bearer {forged}"}).status_code == 403
+    forged = security.create_access_token(_uid("reg4@gmail.com"), "reg4@gmail.com", "INVESTIGATOR", 0)
+    r = client.get("/api/cases", headers={"Authorization": f"Bearer {forged}"})
+    assert r.status_code == 403 and r.json()["detail"] == "PENDING_APPROVAL"
 
 
-def test_admin_can_manually_activate(client, admin):
-    _register(client, "reg5@gmail.com")
-    uid = sqlite3.connect(str(config.DB_PATH)).execute("SELECT id FROM users WHERE email='reg5@gmail.com'").fetchone()[0]
-    assert client.post(f"/api/users/{uid}/verify", headers=admin).status_code == 200
-    assert client.post("/api/auth/login", json={"username": "reg5@gmail.com", "password": "Str0ng!Pass#9"}).status_code == 200
+def test_admin_sees_pending_requests_and_approves(client, admin, make_user):
+    _register(client, "pend1@gmail.com", name="Pending One")
+    pend = client.get("/api/users/pending", headers=admin).json()
+    assert "pend1@gmail.com" in [u["email"] for u in pend]
+    uid = _uid("pend1@gmail.com")
+    assert client.post(f"/api/users/{uid}/approve", headers=admin).json()["approved"] is True
+    assert "pend1@gmail.com" not in [u["email"] for u in client.get("/api/users/pending", headers=admin).json()]
+    assert client.post("/api/auth/login", json={"username": "pend1@gmail.com", "password": "Str0ng!Pass#9"}).status_code == 200
+    rows = client.get(f"/api/users", headers=admin).json()
+    assert next(u for u in rows if u["email"] == "pend1@gmail.com")["email_verified"] is True
+    # approval is recorded
+    con = sqlite3.connect(str(config.DB_PATH))
+    assert con.execute("SELECT COUNT(*) FROM audit_log WHERE action='ACCOUNT_APPROVED'").fetchone()[0] >= 1
+    con.close()
+    # investigators cannot see or decide requests
+    u = make_user("Normal One")
+    assert client.get("/api/users/pending", headers=u["headers"]).status_code == 403
+    assert client.post(f"/api/users/{uid}/approve", headers=u["headers"]).status_code == 403
+    assert client.post(f"/api/users/{uid}/reject", headers=u["headers"]).status_code == 403
+
+
+def test_admin_rejects_request_and_person_can_apply_again(client, admin):
+    _register(client, "rej1@gmail.com")
+    uid = _uid("rej1@gmail.com")
+    assert client.post(f"/api/users/{uid}/reject", headers=admin).json()["rejected"] is True
+    assert client.post("/api/auth/login", json={"username": "rej1@gmail.com", "password": "Str0ng!Pass#9"}).status_code == 401
+    assert _register(client, "rej1@gmail.com").status_code == 201
+    # an approved account can never be "rejected" away through this endpoint
+    uid2 = _uid("rej1@gmail.com")
+    client.post(f"/api/users/{uid2}/approve", headers=admin)
+    assert client.post(f"/api/users/{uid2}/reject", headers=admin).status_code == 404
+
+
+def test_email_features_are_gone(client):
+    for path in ("/api/auth/verify-email", "/api/auth/resend-verification", "/api/auth/forgot-password", "/api/auth/reset-password"):
+        assert client.post(path, json={}).status_code in (404, 405)
 
 
 def test_login_lockout_and_no_demo_password(client):

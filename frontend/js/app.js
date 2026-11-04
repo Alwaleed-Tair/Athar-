@@ -110,7 +110,9 @@ function renderTopbar() {
       const usersBtn = document.createElement('button');
       usersBtn.type = 'button';
       usersBtn.className = 'btn btn-sm btn-ghost' + (State.get().route.name === 'users' ? ' active' : '');
-      usersBtn.innerHTML = `${UI.icon('user', '', 15)} <span>${I18n.t('usersNav')}</span>`;
+      usersBtn.innerHTML = `${UI.icon('user', '', 15)} <span>${I18n.t('usersNav')}</span><span class="pending-badge bell-badge" style="display:none"></span>`;
+      usersBtn.style.position = 'relative';
+      setTimeout(Notifications.paintPending, 0);
       usersBtn.onclick = () => State.set({ route: { name: 'users' } });
       controls.appendChild(usersBtn);
     }
@@ -148,19 +150,6 @@ async function render() {
   root.innerHTML = '';
 
   const { user, route } = State.get();
-
-  // E-mail verification landing page (link from the verification e-mail).
-  if (route.name === 'verify') {
-    root.appendChild(await Auth.renderVerifyPage(route.token));
-    root.appendChild(Pages.footer());
-    return;
-  }
-
-  if (route.name === 'reset') {
-    root.appendChild(await Auth.renderResetPage(route.token));
-    root.appendChild(Pages.footer());
-    return;
-  }
 
   const isPublicPage = Pages.PUBLIC.includes(route.name);
 
@@ -215,22 +204,6 @@ window.addEventListener('hashchange', () => {
 
 (async function bootstrap() {
   applyThemeAndDir();
-
-  // ?verify=TOKEN comes from the link in the verification e-mail. Remove it
-  // from the address bar straight away so the token isn't left in history.
-  const verifyToken = new URLSearchParams(location.search).get('verify');
-  if (verifyToken) {
-    try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
-    State.set({ route: { name: 'verify', token: verifyToken } });
-    return;
-  }
-
-  const resetToken = new URLSearchParams(location.search).get('reset');
-  if (resetToken) {
-    try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
-    State.set({ route: { name: 'reset', token: resetToken } });
-    return;
-  }
 
   const initial = routeFromLocation();
   const token = Api.getToken();

@@ -6,7 +6,7 @@ import sqlite3
 from PIL import Image
 
 from app import analysis, config, embeddings
-from helpers import SENT, new_case, upload
+from helpers import new_case, upload
 
 
 def _png():
@@ -25,40 +25,6 @@ def test_editable_username(client, make_user):
     assert client.patch("/api/auth/me", headers=b["headers"], json={"full_name": "Bob B", "handle": "x"}).json()["detail"] == "INVALID_HANDLE"
     # the username can be used to sign in too
     assert client.post("/api/auth/login", json={"username": "alice.k", "password": a["password"]}).status_code == 200
-
-
-# ---- password reset by e-mail ------------------------------------------------------
-def _reset_token():
-    return re.search(r"\?reset=([A-Za-z0-9_\-]+)", SENT[-1]["body"]).group(1)
-
-
-def test_password_reset_by_email(client, make_user):
-    u = make_user("Alice A")
-    # unknown address: same answer, nothing sent
-    n = len(SENT)
-    assert client.post("/api/auth/forgot-password", json={"email": "ghost@gmail.com"}).json()["status"] == "ACCEPTED"
-    assert len(SENT) == n
-    assert client.post("/api/auth/forgot-password", json={"email": u["email"]}).status_code == 200
-    assert len(SENT) == n + 1 and SENT[-1]["to"] == u["email"]
-    tok = _reset_token()
-    assert client.post("/api/auth/reset-password", json={"token": tok, "new_password": "weak"}).status_code == 400
-    assert client.post("/api/auth/reset-password", json={"token": "x" * 20, "new_password": "N3w!Strong#Pass"}).json()["detail"] == "TOKEN_INVALID"
-    assert client.post("/api/auth/reset-password", json={"token": tok, "new_password": "N3w!Strong#Pass"}).status_code == 200
-    assert client.post("/api/auth/reset-password", json={"token": tok, "new_password": "N3w!Strong#Pass2"}).status_code == 400   # single use
-    assert client.get("/api/auth/me", headers=u["headers"]).status_code == 401                                                   # old session ended
-    assert client.post("/api/auth/login", json={"username": u["email"], "password": "N3w!Strong#Pass"}).status_code == 200
-    assert client.post("/api/auth/login", json={"username": u["email"], "password": u["password"]}).status_code == 401
-
-
-def test_reset_token_expires_and_is_not_a_verify_token(client, make_user):
-    u = make_user("Alice A")
-    client.post("/api/auth/forgot-password", json={"email": u["email"]})
-    tok = _reset_token()
-    assert client.post("/api/auth/verify-email", json={"token": tok}).status_code == 400      # purposes are separate
-    con = sqlite3.connect(str(config.DB_PATH))
-    con.execute("UPDATE email_tokens SET expires_at='2000-01-01T00:00:00.000000' WHERE purpose='RESET' AND used_at IS NULL")
-    con.commit(); con.close()
-    assert client.post("/api/auth/reset-password", json={"token": tok, "new_password": "N3w!Strong#Pass"}).json()["detail"] == "TOKEN_EXPIRED"
 
 
 # ---- account deletion -----------------------------------------------------------------
