@@ -10,6 +10,7 @@ I18n.extend('ar', {
   accountDeleteData: '', accountDeleteAudit: '', relatedNoneBody: '', mapEmptyBody: 'ارفع دليلين أو أكثر لرؤية الروابط.',
   // shorter texts
   dropHint: 'اسحب ملفاً هنا أو اضغط للاختيار',
+  howLimitsTitle: 'تنبيهات',
   caseSummaryNoEvidence: 'لا توجد أدلة بعد.',
   emailHint: 'gmail.com · outlook.sa · hotmail.com · athar.gov',
   caseIdHint: 'رقم القضية 10 أرقام.',
@@ -47,6 +48,7 @@ I18n.extend('en', {
   createCaseContainer: '', caseTitleHint: '', restrictedAccessWarning: '', reportReadyBody: '',
   accountDeleteData: '', accountDeleteAudit: '', relatedNoneBody: '', mapEmptyBody: 'Upload two or more items to see links.',
   dropHint: 'Drop a file here or click to choose',
+  howLimitsTitle: 'Keep in mind',
   caseSummaryNoEvidence: 'No evidence yet.',
   emailHint: 'gmail.com · outlook.sa · hotmail.com · athar.gov',
   caseIdHint: 'Case number: 10 digits.',
