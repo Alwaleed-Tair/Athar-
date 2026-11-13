@@ -126,6 +126,19 @@ def verify_chain(case_id: Optional[int] = None) -> dict:
     records_checked = 0
     first_broken_seq = None
 
+    # Case-level verification also checks each row's link to the row
+    # immediately before it in the global chain (only its hash is read,
+    # never its content). A row deleted from the middle of a case's history
+    # therefore breaks the link of the row after it and is detected.
+    predecessor_hash: dict[int, str] = {}
+    if case_id is not None and rows:
+        seqs = [r["seq"] - 1 for r in rows if r["seq"] > 1]
+        if seqs:
+            marks = ",".join("?" * len(seqs))
+            with get_conn() as conn:
+                for pr in conn.execute(f"SELECT seq, event_hash FROM audit_log WHERE seq IN ({marks})", seqs):
+                    predecessor_hash[pr["seq"]] = pr["event_hash"]
+
     for row in rows:
         records_checked += 1
         try:
@@ -147,6 +160,11 @@ def verify_chain(case_id: Optional[int] = None) -> dict:
         broken = recomputed != row["event_hash"]
         if not broken and case_id is None:
             broken = row["previous_hash"] != expected_previous
+        if not broken and case_id is not None:
+            if row["seq"] == 1:
+                broken = row["previous_hash"] != GENESIS_HASH
+            else:
+                broken = predecessor_hash.get(row["seq"] - 1) != row["previous_hash"]
 
         if broken and first_broken_seq is None:
             first_broken_seq = row["seq"]

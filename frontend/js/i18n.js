@@ -50,7 +50,7 @@ const I18n = (() => {
       crossCaseAlertsTitle: 'Possible links to other cases',
       crossCaseAlertVisible: '"{filename}" appears linked to "{otherFilename}" in another case: {caseName}. Click to open it.',
       crossCaseAlertVisibleCaseOnly: '"{filename}" appears to reference another case: {caseName}. Click to open it.',
-      crossCaseAlertHidden: '"{filename}" appears linked to evidence in another case you don\'t have access to.',
+      crossCaseAlertHidden: '"{filename}" matches evidence in a case you can\'t open. Its details stay hidden; you can ask its owner for access.',
       notifications: 'Notifications',
       notificationsEmpty: 'No notifications right now.',
       chainStatus: 'Chain status',
@@ -59,6 +59,7 @@ const I18n = (() => {
       intact: 'Intact',
       broken: 'Tampering detected',
       recordsChecked: 'records checked',
+      recordsCheckedCount: 'Records checked: {count}',
       firstBrokenAt: 'First broken record: #{seq}',
       uploadEvidence: 'Upload evidence',
       dropHint: 'Click to choose a file, or drag it here',
@@ -253,7 +254,7 @@ const I18n = (() => {
       crossCaseAlertsTitle: 'ارتباطات محتملة مع قضايا أخرى',
       crossCaseAlertVisible: 'الدليل "{filename}" يبدو مرتبط بـ "{otherFilename}" في قضية أخرى: {caseName}. اضغط للانتقال إليها.',
       crossCaseAlertVisibleCaseOnly: 'الدليل "{filename}" يبدو يشير لقضية أخرى: {caseName}. اضغط للانتقال إليها.',
-      crossCaseAlertHidden: 'الدليل "{filename}" يبدو مرتبط بدليل في قضية أخرى ما عندك صلاحية الوصول لها.',
+      crossCaseAlertHidden: 'الدليل "{filename}" يطابق دليلاً في قضية لا تملك صلاحيتها. تفاصيلها محجوبة، ويمكنك طلب الوصول من مالكها.',
       notifications: 'الإشعارات',
       notificationsEmpty: 'لا توجد إشعارات حالياً.',
       chainStatus: 'حالة السلسلة',
@@ -262,6 +263,7 @@ const I18n = (() => {
       intact: 'سليمة',
       broken: 'تم اكتشاف تلاعب',
       recordsChecked: 'سجل تم فحصه',
+      recordsCheckedCount: 'عدد السجلات المفحوصة: {count}',
       firstBrokenAt: 'أول سجل مكسور: #{seq}',
       uploadEvidence: 'رفع دليل',
       dropHint: 'اضغط لاختيار ملف، أو اسحبه هنا',
@@ -363,8 +365,8 @@ const I18n = (() => {
       priorityMedium: 'متوسطة',
       priorityLow: 'منخفضة',
       classificationTopSecret: 'سري للغاية',
-      classificationRestricted: 'مقيد (Restricted)',
-      classificationConfidential: 'سري للأدلة الجنائية (Confidential forensic)',
+      classificationRestricted: 'مقيّد',
+      classificationConfidential: 'سري للأدلة الجنائية',
       classificationInternal: 'للاستخدام الداخلي فقط',
 
       createCaseContainer: 'إنشاء حاوية القضية',
@@ -374,10 +376,10 @@ const I18n = (() => {
       caseTitleLabel: 'اسم القضية / العنوان',
       caseTitleHint: 'الاسم يتضمن حروف ويسمح استخدام الأرقام و En Dash (-)',
       prioritySelect: 'الأولوية (Priority)',
-      classificationSelect: 'درجة السرية (Classification Tag)',
+      classificationSelect: 'درجة السرية',
       statusSelect: 'الحالة (Status)',
       initialDescription: 'الوصف الأولي المختصر',
-      caseFilesCount: 'الملفات: {count} أدلة',
+      caseFilesCount: 'عدد الأدلة: {count}',
 
       // الحسابات والمستخدمون
       fullName: 'الاسم الكامل',
@@ -406,7 +408,7 @@ const I18n = (() => {
 
       // نافذة تنبيه الترابط
       newCorrelationTitle: 'ترابط جديد مع قضية أخرى',
-      newCorrelationSub: 'تم اكتشاف {count} ترابط جديد بين أدلتك وقضية أخرى.',
+      newCorrelationSub: 'اكتُشفت ترابطات جديدة بين أدلتك وقضية أخرى (العدد: {count}).',
       andMore: 'و{count} غيرها — اطّلع على كل الإشعارات.',
       viewAllNotifications: 'كل الإشعارات',
       openCase: 'فتح القضية',
@@ -424,14 +426,23 @@ const I18n = (() => {
   }
   function t(key, vars) {
     const lang = getLang();
-    let str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
+    const own = (d) => d && Object.prototype.hasOwnProperty.call(d, key);
+    let str = own(STRINGS[lang]) ? STRINGS[lang][key] : own(STRINGS.en) ? STRINGS.en[key] : key;
     if (vars) {
       Object.keys(vars).forEach((k) => {
-        str = str.replace(`{${k}}`, vars[k]);
+        str = str.split(`{${k}}`).join(vars[k]);
       });
     }
     return str;
   }
 
-  return { getLang, setLang, dirFor, t };
+  // Lets later files add strings without editing this one (i18n-extra.js).
+  function extend(lang, dict) {
+    STRINGS[lang] = Object.assign(STRINGS[lang] || {}, dict);
+  }
+  function has(key) {
+    return !!((STRINGS[getLang()] && STRINGS[getLang()][key]) || STRINGS.en[key]);
+  }
+
+  return { getLang, setLang, dirFor, t, has, extend };
 })();

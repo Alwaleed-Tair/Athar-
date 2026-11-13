@@ -20,17 +20,33 @@ STORAGE_DIR = Path(os.environ.get("ATHAR_STORAGE_DIR", str(BACKEND_DIR / "storag
 EVIDENCE_DIR = STORAGE_DIR / "evidence"
 DB_PATH = STORAGE_DIR / "athar.db"
 
-# JWT secret must come from environment. We generate a random one at import
-# time ONLY as a last-resort dev fallback so the app doesn't crash on first
-# run, but this means tokens won't survive a restart unless ATHAR_JWT_SECRET
-# is set explicitly. This is flagged clearly in the README.
+# JWT secret: taken from ATHAR_JWT_SECRET when set. Otherwise a random
+# secret is generated ONCE and persisted in the storage directory
+# (chmod 600) so sessions survive a restart. If the storage directory is
+# not writable we fall back to an in-memory secret (sessions then end on
+# restart) and say so at startup.
 JWT_SECRET = os.environ.get("ATHAR_JWT_SECRET")
+JWT_SECRET_SOURCE = "env"
 if not JWT_SECRET:
     import secrets
-    JWT_SECRET = secrets.token_hex(32)
-    JWT_SECRET_IS_EPHEMERAL = True
-else:
-    JWT_SECRET_IS_EPHEMERAL = False
+
+    _secret_file = STORAGE_DIR / ".jwt_secret"
+    try:
+        STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        if _secret_file.exists():
+            JWT_SECRET = _secret_file.read_text().strip()
+        if not JWT_SECRET:
+            JWT_SECRET = secrets.token_hex(32)
+            _secret_file.write_text(JWT_SECRET)
+            try:
+                os.chmod(_secret_file, 0o600)
+            except OSError:
+                pass
+        JWT_SECRET_SOURCE = "file"
+    except OSError:
+        JWT_SECRET = secrets.token_hex(32)
+        JWT_SECRET_SOURCE = "memory"
+JWT_SECRET_IS_EPHEMERAL = JWT_SECRET_SOURCE == "memory"
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.environ.get("ATHAR_JWT_EXPIRE_MINUTES", "480"))
@@ -51,7 +67,11 @@ ATHAR_AI_VISION_MODEL = os.environ.get("ATHAR_AI_VISION_MODEL", "deepseek-v4-fla
 
 # Upload limits
 MAX_UPLOAD_BYTES = int(os.environ.get("ATHAR_MAX_UPLOAD_MB", "50")) * 1024 * 1024
-BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".ps1", ".sh", ".js", ".jar"}
+BLOCKED_EXTENSIONS = {
+    ".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi", ".ps1", ".psm1",
+    ".sh", ".js", ".mjs", ".vbs", ".vbe", ".jar", ".apk", ".app", ".lnk",
+    ".reg", ".hta", ".cpl", ".php", ".py",
+}
 
 # Manual evidence categories (investigator-assigned, not AI-suggested).
 # Add/remove entries here; i18n.py in the frontend has the display labels.
@@ -76,3 +96,50 @@ TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
 
 SUPPORTED_LANGS = {"en", "ar"}
 DEFAULT_LANG = "en"
+
+
+# --- Login throttling ---------------------------------------------------
+LOGIN_MAX_FAILURES = int(os.environ.get("ATHAR_LOGIN_MAX_FAILURES", "5"))
+LOGIN_LOCK_SECONDS = int(os.environ.get("ATHAR_LOGIN_LOCK_SECONDS", "900"))
+
+# --- Evidence retention -------------------------------------------------
+# Deleting evidence is a soft delete: it disappears from every list, map,
+# search and report immediately, but the stored file and its hash are kept
+# for this many days (custody integrity / recovery from mistakes) and are
+# then permanently purged. The audit-log rows are never removed.
+EVIDENCE_RETENTION_DAYS = int(os.environ.get("ATHAR_EVIDENCE_RETENTION_DAYS", "30"))
+
+# Restricted cross-case notices. When evidence in your case matches evidence in a case you are
+# NOT a member of, by a concrete identifier only (identical file, or the same phone number,
+# e-mail or IBAN), you are told THAT a match exists and why -- never which case, whose it is, or
+# anything it contains -- and you can ask that case's owner for access. Both sides see the notice
+# in their own case. Every first detection, request and decision is sealed in the custody chain.
+# Set ATHAR_RESTRICTED_LINK_ALERTS=0 to turn the notices off.
+RESTRICTED_LINK_ALERTS = os.environ.get("ATHAR_RESTRICTED_LINK_ALERTS", "1").strip().lower() not in ("0", "false", "no", "off")
+
+# Conversation parsing limits
+MAX_CHAT_MESSAGES = 100_000
+MAX_FULLTEXT_CHARS = 2_000_000
+
+# --- Optional semantic search (embeddings) -------------------------------
+# Any OpenAI-compatible /embeddings endpoint. Disabled unless a key is set.
+# When used, text of the user's own evidence is sent to this provider.
+EMBED_KEY = os.environ.get("ATHAR_EMBED_KEY", "")
+EMBED_URL = os.environ.get("ATHAR_EMBED_URL", "https://api.openai.com/v1/embeddings")
+EMBED_MODEL = os.environ.get("ATHAR_EMBED_MODEL", "text-embedding-3-small")
+SEMANTIC_MIN_SCORE = float(os.environ.get("ATHAR_SEMANTIC_MIN_SCORE", "0.35"))
+
+# --- Optional OCR -----------------------------------------------------------
+# Local Tesseract is used when the `tesseract` binary exists (languages from
+# OCR_LANGS); otherwise OCR falls back to the AI vision model if a key is set.
+OCR_LANGS = os.environ.get("ATHAR_OCR_LANGS", "ara+eng")
+
+# --- Separate provider for IMAGE features (OCR, image descriptions, authenticity) ---
+# Reading images needs a vision-capable model. The text provider (DeepSeek by
+# default) may not offer one, so images can use another OpenAI-compatible
+# endpoint. Each setting falls back to the text-provider value when empty.
+#   ATHAR_VISION_URL   e.g. https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+#   ATHAR_VISION_KEY   the key for that provider
+#   ATHAR_AI_VISION_MODEL  the vision-capable model id at that provider
+VISION_URL = os.environ.get("ATHAR_VISION_URL", "")
+VISION_KEY = os.environ.get("ATHAR_VISION_KEY", "")

@@ -12,7 +12,7 @@ function applyThemeAndDir() {
   // Dynamically update favicon based on active theme
   const fav = document.querySelector('link[rel="icon"]');
   if (fav) {
-    fav.href = theme === 'dark' ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    fav.href = '/assets/favicon-32.png';
   }
 }
 
@@ -43,7 +43,7 @@ function logout() {
 function renderTopbar() {
   const { user, theme } = State.get();
   const isDark = theme === 'dark';
-  const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+  const symbolSrc = '/assets/athar-logo-128.png';
 
   const bar = document.createElement('div');
   bar.className = 'topbar';
@@ -93,9 +93,12 @@ function renderTopbar() {
     // Signed-in user: real name (falls back to username) + role
     const displayName = user.full_name || user.username;
     const roleLabel = user.role === 'ADMIN' ? I18n.t('admin') : I18n.t('investigator');
-    const examinerCard = document.createElement('div');
-    examinerCard.className = 'examiner-profile-pill';
-    examinerCard.title = user.username;
+    const examinerCard = document.createElement('button');
+    examinerCard.type = 'button';
+    examinerCard.className = 'examiner-profile-pill examiner-btn' + (State.get().route.name === 'account' ? ' active' : '');
+    examinerCard.title = I18n.t('accountTitle');
+    examinerCard.setAttribute('aria-label', I18n.t('accountTitle'));
+    examinerCard.onclick = () => State.set({ route: { name: 'account' } });
     examinerCard.innerHTML = `
       <span class="examiner-avatar">${UI.icon('userCheck', '', 14)}</span>
       <span class="examiner-name">${UI.escapeHtml(displayName)} · <span class="text-muted">${roleLabel}</span></span>
@@ -107,7 +110,9 @@ function renderTopbar() {
       const usersBtn = document.createElement('button');
       usersBtn.type = 'button';
       usersBtn.className = 'btn btn-sm btn-ghost' + (State.get().route.name === 'users' ? ' active' : '');
-      usersBtn.innerHTML = `${UI.icon('user', '', 15)} <span>${I18n.t('usersNav')}</span>`;
+      usersBtn.innerHTML = `${UI.icon('user', '', 15)} <span>${I18n.t('usersNav')}</span><span class="pending-badge bell-badge" style="display:none"></span>`;
+      usersBtn.style.position = 'relative';
+      setTimeout(Notifications.paintPending, 0);
       usersBtn.onclick = () => State.set({ route: { name: 'users' } });
       controls.appendChild(usersBtn);
     }
@@ -125,6 +130,15 @@ function renderTopbar() {
     controls.appendChild(logoutBtn);
   }
 
+  if (!user) {
+    const signIn = document.createElement('button');
+    signIn.type = 'button';
+    signIn.className = 'btn btn-sm btn-primary';
+    signIn.innerHTML = `${UI.icon('lock', '', 14)} <span>${I18n.t('signInTab')}</span>`;
+    signIn.onclick = () => { try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ } State.set({ route: { name: 'login' } }); };
+    controls.appendChild(signIn);
+  }
+
   bar.appendChild(brand);
   bar.appendChild(controls);
   return bar;
@@ -137,8 +151,19 @@ async function render() {
 
   const { user, route } = State.get();
 
+  const isPublicPage = Pages.PUBLIC.includes(route.name);
+
   if (!user) {
-    root.appendChild(await Auth.renderLogin());
+    if (isPublicPage) {
+      root.appendChild(renderTopbar());
+      const c = document.createElement('div');
+      c.className = 'main-container';
+      c.appendChild(Pages.render(route.name));
+      root.appendChild(c);
+    } else {
+      root.appendChild(await Auth.renderLogin());
+    }
+    root.appendChild(Pages.footer());
     return;
   }
 
@@ -148,7 +173,11 @@ async function render() {
   container.className = 'main-container';
   root.appendChild(container);
 
-  if (route.name === 'cases') {
+  if (isPublicPage) {
+    container.appendChild(Pages.render(route.name));
+  } else if (route.name === 'account') {
+    container.appendChild(await Account.renderPage());
+  } else if (route.name === 'cases') {
     container.appendChild(await Cases.renderList());
   } else if (route.name === 'case') {
     container.appendChild(await Cases.renderDetail(route.caseId, route.tab || 'overview'));
@@ -157,23 +186,37 @@ async function render() {
   } else {
     container.appendChild(await Cases.renderList());
   }
+  root.appendChild(Pages.footer());
 }
 
 State.subscribe(() => { render(); });
 
 // --- Bootstrap: validate any stored token before first render ---------
+function routeFromLocation() {
+  const name = (location.hash || '').replace(/^#\/?/, '');
+  return Pages.PUBLIC.includes(name) ? { name } : null;
+}
+
+window.addEventListener('hashchange', () => {
+  const r = routeFromLocation();
+  if (r) State.set({ route: r });
+});
+
 (async function bootstrap() {
   applyThemeAndDir();
+
+  const initial = routeFromLocation();
   const token = Api.getToken();
   if (token) {
     try {
       const user = await Api.me();
-      State.set({ user, route: { name: 'cases' } });
+      State.set({ user, route: initial || { name: 'cases' } });
       Notifications.refresh();
       return;
     } catch (e) {
       Api.setToken(null);
     }
   }
-  render();
+  if (initial) State.set({ route: initial });
+  else render();
 })();

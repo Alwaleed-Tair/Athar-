@@ -16,56 +16,96 @@ const EvidenceMap = (() => {
     const wrap = document.createElement('div');
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<h3>${I18n.t('evidenceMap')}</h3><div id="map-container" class="mt-3"><p class="text-muted">…</p></div>`;
+    card.innerHTML = `<h3>${I18n.t('evidenceMap')}</h3><div id="map-container" class="mt-3"></div>`;
     wrap.appendChild(card);
-
     const container = card.querySelector('#map-container');
 
-    let data;
-    try {
-      data = await Api.getEvidenceMap(caseId);
-    } catch (e) {
-      container.innerHTML = `<div class="alert alert-danger">${I18n.t('genericError')}</div>`;
-      return wrap;
+    async function draw(refresh) {
+      container.innerHTML = UI.spinner(refresh ? I18n.t('mapRefreshing') : I18n.t('mapLoading'));
+      let data;
+      try {
+        data = await Api.getEvidenceMap(caseId, refresh);
+      } catch (e) {
+        container.innerHTML = `<div class="alert alert-danger">${UI.escapeHtml(UI.errorMessage(e))}</div>`;
+        return;
+      }
+      container.innerHTML = '';
+
+      if (!data.nodes || data.nodes.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.innerHTML = `<h3>${I18n.t('mapEmptyTitle')}</h3><p>${I18n.t('mapEmptyBody')}</p>`;
+        container.appendChild(empty);
+        return;
+      }
+
+      container.appendChild(buildLegend());
+
+      const hasAiEdges = (data.edges || []).some((e) => e.ai_estimated);
+      if (hasAiEdges) {
+        const caption = document.createElement('p');
+        caption.className = 'text-muted text-xs';
+        caption.style.cssText = 'margin-block-end:12px; display:flex; align-items:center; gap:6px;';
+        caption.innerHTML = `${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('aiAutomatedEstimate')}</span>`;
+        container.appendChild(caption);
+      }
+
+      // AI relationships are saved: say when they were produced and let the user re-run them.
+      if (data.ai_status === 'SUCCESS' && data.ai_generated_at) {
+        const bar = document.createElement('div');
+        bar.className = 'flex gap-2 text-sm text-muted';
+        bar.style.cssText = 'align-items:center; flex-wrap:wrap; margin-block-end:12px;';
+        bar.innerHTML = `<span>${I18n.t('mapAiSavedAt', { date: UI.dateHtml(data.ai_generated_at) })}</span>
+          <button type="button" class="btn btn-sm" id="map-refresh">${UI.icon('refresh', '', 14)} <span>${I18n.t('mapRefresh')}</span></button>`;
+        bar.querySelector('#map-refresh').onclick = () => draw(true);
+        container.appendChild(bar);
+      }
+
+      const banner = buildAiStatusBanner(data);
+      if (banner) container.appendChild(banner);
+
+      container.appendChild(buildGraph(data));
+      const list = buildEdgeList(data);
+      if (list) container.appendChild(list);
+
+      if (data.edges.length === 0 && data.ai_status !== 'DISABLED' && data.ai_status !== 'FAILED') {
+        const note = document.createElement('p');
+        note.className = 'text-muted text-sm mt-3';
+        note.textContent = I18n.t('mapEmptyBody');
+        container.appendChild(note);
+      }
     }
 
-    container.innerHTML = '';
-
-    if (!data.nodes || data.nodes.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.innerHTML = `<h3>${I18n.t('mapEmptyTitle')}</h3><p>${I18n.t('mapEmptyBody')}</p>`;
-      container.appendChild(empty);
-      return wrap;
-    }
-
-    container.appendChild(buildLegend());
-
-    const hasAiEdges = (data.edges || []).some((e) => e.ai_estimated);
-    if (hasAiEdges) {
-      const caption = document.createElement('p');
-      caption.className = 'text-muted text-xs';
-      caption.style.marginBlockEnd = '12px';
-      caption.style.display = 'flex';
-      caption.style.alignItems = 'center';
-      caption.style.gap = '6px';
-      caption.innerHTML = `${UI.icon('alertTriangle', '', 14)} <span>${I18n.t('aiAutomatedEstimate')}</span>`;
-      container.appendChild(caption);
-    }
-
-    const banner = buildAiStatusBanner(data);
-    if (banner) container.appendChild(banner);
-
-    container.appendChild(buildGraph(data));
-
-    if (data.edges.length === 0 && data.ai_status !== 'DISABLED' && data.ai_status !== 'FAILED') {
-      const note = document.createElement('p');
-      note.className = 'text-muted text-sm mt-3';
-      note.textContent = I18n.t('mapEmptyBody');
-      container.appendChild(note);
-    }
-
+    await draw(false);
     return wrap;
+  }
+
+  // Text list of every connection and its reason: complements the drawing,
+  // which is too small to read labels on a phone.
+  function buildEdgeList(data) {
+    if (!data.edges || data.edges.length === 0) return null;
+    const byId = {};
+    data.nodes.forEach((n) => { byId[n.id] = n; });
+    const box = document.createElement('div');
+    box.className = 'mt-4';
+    box.innerHTML = `<h4>${I18n.t('mapConnections')}</h4>`;
+    const ul = document.createElement('ul');
+    ul.className = 'edge-list';
+    data.edges.forEach((e) => {
+      const a = byId[e.source];
+      const b = byId[e.target];
+      if (!a || !b) return;
+      const li = document.createElement('li');
+      const style = edgeStyle(e);
+      li.style.borderInlineStartColor = cssVar(style.colorVar);
+      const kind = e.ai_estimated ? I18n.t('edgeAiCorrelation') : edgeTooltip(e);
+      li.innerHTML = `<div dir="auto"><strong>${UI.escapeHtml(a.title || a.filename)}</strong> ↔ <strong>${UI.escapeHtml(b.title || b.filename)}</strong></div>
+        <div class="text-sm" dir="auto">${UI.escapeHtml(kind)}${e.ai_estimated ? ` <span class="chip chip-warn">${I18n.t('aiEstimateShort')}</span>` : ''}</div>
+        ${e.explanation ? `<div class="text-muted text-sm" dir="auto">${UI.escapeHtml(e.explanation)}</div>` : ''}`;
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    return box;
   }
 
   function buildAiStatusBanner(data) {
@@ -157,12 +197,15 @@ const EvidenceMap = (() => {
     // Landscape viewBox instead of a small fixed square, and no width
     // cap -- the graph now scales up to fill the card's actual width
     // instead of sitting in a small square with empty space around it.
-    const width = 900;
-    const height = 480;
+    const compact = window.innerWidth < 700;
+    const width = compact ? Math.max(300, window.innerWidth - 64) : 900;
+    const height = compact ? 380 : 480;
     const cx = width / 2;
     const cy = height / 2;
-    const rx = Math.min(400, 130 + nodes.length * 22); // horizontal radius
-    const ry = Math.min(190, 90 + nodes.length * 10); // vertical radius
+    const rx = compact ? Math.max(70, width / 2 - 60) : Math.min(400, 130 + nodes.length * 22); // horizontal radius
+    const ry = compact ? 130 : Math.min(190, 90 + nodes.length * 10); // vertical radius
+    const nodeR = compact ? 24 : 20;
+    const labelSize = compact ? 12 : 10;
 
     const positions = {};
     nodes.forEach((n, i) => {
@@ -199,7 +242,7 @@ const EvidenceMap = (() => {
       line.setAttribute('x2', b.x);
       line.setAttribute('y2', b.y);
       line.setAttribute('stroke', cssVar(style.colorVar));
-      line.setAttribute('stroke-width', '2');
+      line.setAttribute('stroke-width', compact ? '3' : '2');
       if (style.dash) line.setAttribute('stroke-dasharray', style.dash);
       line.setAttribute('opacity', '0.85');
 
@@ -213,7 +256,7 @@ const EvidenceMap = (() => {
       // midpoint, per feedback that the map needs to show WHY two items
       // are linked without requiring a hover.
       const shortLabel = edgeShortLabel(e);
-      if (shortLabel) {
+      if (shortLabel && !compact) {
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2;
         const approxWidth = Math.min(shortLabel.length * 5.2 + 8, 160);
@@ -246,11 +289,14 @@ const EvidenceMap = (() => {
       const p = positions[n.id];
       const g = document.createElementNS(SVG_NS, 'g');
       g.style.cursor = 'pointer';
+      g.setAttribute('role', 'button');
+      g.setAttribute('tabindex', '0');
+      g.setAttribute('aria-label', n.title || n.filename);
 
       const circle = document.createElementNS(SVG_NS, 'circle');
       circle.setAttribute('cx', p.x);
       circle.setAttribute('cy', p.y);
-      circle.setAttribute('r', '20');
+      circle.setAttribute('r', String(nodeR));
       circle.setAttribute('fill', cssVar('--color-surface'));
       circle.setAttribute('stroke', cssVar('--color-primary'));
       circle.setAttribute('stroke-width', '2');
@@ -264,21 +310,22 @@ const EvidenceMap = (() => {
       g.appendChild(icon);
 
       const title = document.createElementNS(SVG_NS, 'title');
-      const tooltipLines = [n.filename, `${I18n.t('sha256')}: ${n.sha256.slice(0, 16)}…`];
+      const tooltipLines = [n.title || n.filename, `${I18n.t('sha256')}: ${n.sha256.slice(0, 16)}…`];
       if (n.device) tooltipLines.push(n.device);
       title.textContent = tooltipLines.join('\n');
       g.appendChild(title);
 
       const label = document.createElementNS(SVG_NS, 'text');
       label.setAttribute('x', p.x);
-      label.setAttribute('y', p.y + 36);
+      label.setAttribute('y', p.y + nodeR + 16);
       label.setAttribute('text-anchor', 'middle');
-      label.setAttribute('font-size', '10');
+      label.setAttribute('font-size', String(labelSize));
       label.setAttribute('fill', cssVar('--color-text-muted'));
-      label.textContent = truncate(n.filename, 16);
+      label.textContent = truncate(n.title || n.filename, compact ? 14 : 18);
       g.appendChild(label);
 
       g.addEventListener('click', () => Evidence.openInspectModal(n.id));
+      g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') Evidence.openInspectModal(n.id); });
       svg.appendChild(g);
     });
 

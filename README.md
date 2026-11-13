@@ -5,6 +5,23 @@ extract EXIF metadata, and keep a cryptographically-chained,
 tamper-evident audit log ("chain of custody") for every action taken on
 a case or a piece of evidence.
 
+## What changed in v13 (user-feedback release)
+
+- **Account approval (no e-mail)**: self-registration creates a pending account; administrators see the requests (with a counter on the Users button) and approve or reject them. Unapproved accounts cannot sign in or use the API. Forgotten passwords are reset by an administrator.
+- **My account**: edit display name, see the (read-only) e-mail, change password (ends all other sessions).
+- **Evidence management**: edit title/description/category (file and hash never change), delete with confirmation. Delete is a *soft delete*: gone from lists/search/map/reports/AI at once, derived data removed, file kept `ATHAR_EVIDENCE_RETENTION_DAYS` (30) then purged; the audit log keeps the record. Only the uploader or the case owner may edit/delete.
+- **Integrity**: SHA-256 re-checked before download and analysis, and before+after AI processing (both hashes in the audit log); a mismatch refuses the action. "Verify file integrity" button.
+- **Conversations**: WhatsApp text, Telegram/Instagram-style JSON, CSV, and chats in PDF/DOCX are parsed into messages (sender, time, text, source position), shown in a viewer with in-chat search, statistics, links to other evidence, and an optional AI summary whose every point cites message numbers. Chat text is untrusted data. Screenshots/scans have no OCR.
+- **Search & related**: keyword search (Arabic-normalised) and explainable links (identical hash, same device, shared phone/e-mail/IBAN/URL, same participant, lexical TF-IDF similarity). Limited to cases the user is a member of; the old "hidden alert" that revealed other users' data was removed.
+- **PDF legal report** (Arabic RTL / English): case info, evidence with recorded vs re-computed hash, chain verification, extracted metadata, relationships, conversations, AI notes in a separate amber section, method and limits.
+- **Pages**: privacy policy, terms of use, how analysis works, contact form (stored for administrators), reachable without signing in.
+- **Security**: removed the hard-coded demo passwords; login lockout; sessions end on password change; security headers/CSP; upload magic-byte check and filename sanitising; AI provider errors no longer shown; evidence is passed to the AI as inert data (prompt-injection hardening); admins no longer have a way into other users' cases; case sharing is owner-only by exact e-mail.
+- **Tests**: `cd backend && pip install pytest httpx && python -m pytest tests`.
+- **Also added**: editable username (handle, usable to sign in), self-service account deletion, OCR on images (local Tesseract if installed, otherwise the AI vision model; output labelled approximate and parsed into messages when it looks like a chat), and optional search by meaning (`ATHAR_EMBED_KEY`/`ATHAR_EMBED_URL`/`ATHAR_EMBED_MODEL`, any OpenAI-compatible embeddings endpoint; disabled by default).
+- Najiz: see `docs/NAJIZ_INTEGRATION.md` (study only, nothing implemented).
+
+> Deployment note: SQLite and evidence files live in `backend/storage/`. On Render's free tier the disk is ephemeral - attach a persistent disk or data is lost on redeploy.
+
 ## File tree
 
 ```
@@ -88,6 +105,19 @@ When evidence in one case matches another case (same file hash, same
 device, or a text reference), a popup appears the first time the match
 is seen, and the bell keeps the full list. The app re-checks in the
 background every minute while a user is signed in.
+
+- **Cases you are a member of:** full detail (the other case, the other
+  file, every reason).
+- **Cases you are NOT a member of (restricted notice):** only concrete
+  identifiers count (identical file, same phone number, e-mail or IBAN).
+  Both investigators see a notice in their own case saying a match exists
+  and which of *their own* values matched, never the other case's name,
+  owner, files or content. Either one can send an access request; only the
+  owner of the other case sees who is asking and decides. Approving adds
+  the requester as a case member. First detections, requests and decisions
+  are sealed in the custody chain. Fuzzy signals (wording, device,
+  participant names, URLs) never cross this boundary. Turn the notices off
+  with `ATHAR_RESTRICTED_LINK_ALERTS=0`.
 
 ### Enabling AI analysis (optional)
 

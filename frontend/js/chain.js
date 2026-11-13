@@ -26,7 +26,7 @@ const Chain = (() => {
     let brokenSeq = null;
 
     async function load() {
-      listEl.innerHTML = `<p class="text-muted">…</p>`;
+      listEl.innerHTML = UI.spinner();
       let rows;
       try {
         rows = await Api.caseAudit(caseId);
@@ -45,13 +45,13 @@ const Chain = (() => {
         const isBroken = brokenSeq && r.seq >= brokenSeq;
         item.className = 'chain-item' + (isBroken ? ' broken' : '');
         item.innerHTML = `
-          <div style="font-weight:600; font-size:0.9rem; color:var(--color-text);">${UI.escapeHtml(r.message)}</div>
+          <div style="font-weight:600; font-size:0.9rem; color:var(--color-text);" dir="auto">${UI.escapeHtml(r.message)}</div>
           <div class="text-muted text-xs mt-1" style="display:flex; align-items:center; gap:6px;">
-            <span>${UI.escapeHtml(r.ts)}</span>
+            <span>${UI.dateHtml(r.ts)}</span>
             <span>·</span>
             <span class="ui-badge" style="padding:1px 6px;">#${r.seq}</span>
           </div>
-          <div class="chain-hash text-xs mono mt-1">
+          <div class="chain-hash text-xs mono mt-1" dir="ltr">
             <span style="opacity:0.75;">${I18n.t('sha256')}:</span> ${r.event_hash}
           </div>
         `;

@@ -1,0 +1,215 @@
+import io
+import json
+import re
+import sqlite3
+
+from PIL import Image
+
+from app import analysis, config, embeddings
+from helpers import new_case, upload
+
+
+def _png():
+    b = io.BytesIO(); Image.new("RGB", (40, 20), "white").save(b, "PNG"); return b.getvalue()
+
+
+# ---- username (handle) ---------------------------------------------------------
+def test_editable_username(client, make_user):
+    a, b = make_user("Alice A"), make_user("Bob B")
+    me = client.get("/api/auth/me", headers=a["headers"]).json()
+    assert me["handle"] and "@" not in me["handle"]
+    ok = client.patch("/api/auth/me", headers=a["headers"], json={"full_name": "Alice A", "handle": "alice.k"})
+    assert ok.status_code == 200 and ok.json()["handle"] == "alice.k"
+    assert client.patch("/api/auth/me", headers=b["headers"], json={"full_name": "Bob B", "handle": "ALICE.K"}).json()["detail"] == "HANDLE_TAKEN"
+    assert client.patch("/api/auth/me", headers=b["headers"], json={"full_name": "Bob B", "handle": "a b"}).json()["detail"] == "INVALID_HANDLE"
+    assert client.patch("/api/auth/me", headers=b["headers"], json={"full_name": "Bob B", "handle": "x"}).json()["detail"] == "INVALID_HANDLE"
+    # the username can be used to sign in too
+    assert client.post("/api/auth/login", json={"username": "alice.k", "password": a["password"]}).status_code == 200
+
+
+# ---- account deletion -----------------------------------------------------------------
+def test_delete_account_transfers_archives_and_erases(client, make_user):
+    a, b = make_user("Alice A"), make_user("Bob B")
+    shared = new_case(client, a["headers"], "Shared")
+    client.post(f"/api/cases/{shared}/members", headers=a["headers"], json={"email": b["email"]})
+    solo = new_case(client, a["headers"], "Solo")
+    ev = upload(client, a["headers"], solo, "s.txt", b"solo evidence text").json()
+    client.post("/api/contact", headers=a["headers"], json={"name": "Alice A", "email": a["email"], "category": "OTHER", "subject": "hello there", "message": "a long enough message"})
+
+    assert client.post("/api/auth/delete-account", headers=a["headers"], json={"password": "wrong"}).status_code == 400
+    r = client.post("/api/auth/delete-account", headers=a["headers"], json={"password": a["password"]})
+    assert r.status_code == 200 and r.json() == {"status": "DELETED", "cases_transferred": 1, "cases_archived": 1}
+    assert client.get("/api/auth/me", headers=a["headers"]).status_code == 401
+    assert client.post("/api/auth/login", json={"username": a["email"], "password": a["password"]}).status_code == 401
+    # shared case handed to Bob, who can now manage it; solo case archived
+    assert client.get(f"/api/cases/{shared}", headers=b["headers"]).json()["is_owner"] is True
+    assert client.get(f"/api/cases/{solo}", headers=b["headers"]).status_code == 404
+    con = sqlite3.connect(str(config.DB_PATH))
+    row = con.execute("SELECT username,email,full_name,password_hash FROM users WHERE id=(SELECT uploaded_by FROM evidence WHERE id=?)", (ev["id"],)).fetchone()
+    assert row[1] == "" and row[2] == "" and row[0].startswith("deleted-") and row[3] == "!"
+    assert con.execute("SELECT COUNT(*) FROM contact_messages WHERE email=?", (a["email"],)).fetchone()[0] == 0
+    assert con.execute("SELECT deleted_at FROM evidence WHERE id=?", (ev["id"],)).fetchone()[0]
+    con.close()
+    # the freed e-mail can register again; the audit chain still verifies
+    assert client.post("/api/auth/register", json={"full_name": "Alice Again", "username": a["email"], "password": "Str0ng!Pass#9"}).status_code == 201
+    assert client.get(f"/api/cases/{shared}/verify", headers=b["headers"]).json()["intact"] is True
+
+
+def test_last_admin_cannot_delete(client, admin):
+    r = client.post("/api/auth/delete-account", headers=admin, json={"password": "Adm1n!Secret#1"})
+    assert r.status_code == 400 and r.json()["detail"] == "LAST_ADMIN"
+
+
+# ---- OCR ------------------------------------------------------------------------------------
+def test_ocr_disabled_is_honest(client, make_user, monkeypatch):
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", None)
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "shot.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "DISABLED" and "text" not in r
+    txt = upload(client, a["headers"], cid, "n.txt", b"plain text file").json()
+    assert client.post(f"/api/evidence/{txt['id']}/ocr", headers=a["headers"]).status_code == 400
+    other = make_user("Bob B")
+    assert client.post(f"/api/evidence/{ev['id']}/ocr", headers=other["headers"]).status_code == 404
+
+
+def test_ocr_via_vision_creates_searchable_text_and_conversation(client, make_user, monkeypatch):
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "dummy")
+    monkeypatch.setattr(analysis, "_call_vision_model",
+                        lambda *a, **k: ("خولة: وين الملف؟\nأحمد: عند المحل في الرياض\nخولة: تمام", "stop"))
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "chat_shot.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "SUCCESS" and r["method"] == "AI_VISION" and r["is_approximation"] is True
+    assert r["conversation"] == {"format": "OCR_TEXT", "message_count": 3}
+    got = client.get(f"/api/evidence/{ev['id']}", headers=a["headers"]).json()
+    assert got["ocr"]["method"] == "OCR_AI_VISION" and got["conversation"]["message_count"] == 3
+    hits = client.get("/api/search", headers=a["headers"], params={"q": "الرياض", "case_id": cid}).json()
+    assert hits["evidence"] and hits["messages"]
+    assert client.get(f"/api/evidence/{ev['id']}/conversation", headers=a["headers"]).json()["messages"][0]["source_ref"] == "ocr line 1"
+    audit = client.get(f"/api/cases/{cid}/audit?lang=en", headers=a["headers"]).json()
+    assert any(x["action"] == "EVIDENCE_OCR_RUN" for x in audit)
+    assert client.get(f"/api/cases/{cid}/report", params={"lang": "en"}, headers=a["headers"]).status_code == 200
+
+
+def test_ocr_tesseract_path(client, make_user, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: True)
+    monkeypatch.setattr("shutil.which", lambda n: "/usr/bin/tesseract")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, b"hello from tesseract", b""))
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "scan.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "SUCCESS" and r["method"] == "TESSERACT" and r["text"] == "hello from tesseract"
+
+
+# ---- semantic search -------------------------------------------------------------------------
+def test_semantic_search_disabled_then_enabled_and_scoped(client, make_user, monkeypatch):
+    a, b = make_user("Alice A"), make_user("Bob B")
+    ca, cb = new_case(client, a["headers"]), new_case(client, b["headers"])
+    upload(client, a["headers"], ca, "car.txt", b"The suspect drove a red vehicle away from the bank")
+    upload(client, a["headers"], ca, "food.txt", b"Recipe for rice with chicken and spices for dinner")
+    upload(client, b["headers"], cb, "theirs.txt", b"A car was seen leaving the bank at night")
+    monkeypatch.setattr(config, "EMBED_KEY", "")
+    assert client.get("/api/search/semantic", headers=a["headers"], params={"q": "automobile"}).json()["status"] == "DISABLED"
+
+    monkeypatch.setattr(config, "EMBED_KEY", "k")
+    calls = []
+
+    def fake_embed(texts):
+        calls.append(texts)
+        def vec(t):
+            t = t.lower()
+            return [1.0 if ("car" in t or "vehicle" in t or "automobile" in t) else 0.0,
+                    1.0 if ("rice" in t or "recipe" in t) else 0.0, 0.05]
+        return [vec(t) for t in texts]
+
+    monkeypatch.setattr(embeddings, "_embed", fake_embed)
+    r = client.get("/api/search/semantic", headers=a["headers"], params={"q": "automobile theft"}).json()
+    assert r["status"] == "SUCCESS" and [x["filename"] for x in r["results"]] == ["car.txt"]
+    sent = json.dumps(calls)
+    assert "A car was seen leaving" not in sent                       # B's text never sent for A's search
+    n = len(calls)
+    client.get("/api/search/semantic", headers=a["headers"], params={"q": "automobile"})
+    assert sum(len(c) for c in calls[n:]) == 1                          # vectors cached: only the query is embedded
+    monkeypatch.setattr(embeddings, "_embed", lambda t: (_ for _ in ()).throw(embeddings.EmbeddingError("x")))
+    assert client.get("/api/search/semantic", headers=a["headers"], params={"q": "anything new"}).json()["status"] == "FAILED"
+
+
+def test_audit_messages_are_fully_localized(client, make_user):
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "c.txt", "[31/12/23, 10:15:30 PM] A: x\n[31/12/23, 10:16:30 PM] B: y\n".encode()).json()
+    client.get(f"/api/cases/{cid}/verify", headers=a["headers"])
+    client.delete(f"/api/evidence/{ev['id']}", headers=a["headers"])
+    for lang, banned in (("ar", ["True", "False", "TEXT_TIMESTAMPED", "TRANSFERRED"]), ("en", ["True", "False", "TEXT_TIMESTAMPED"])):
+        rows = client.get(f"/api/cases/{cid}/audit?lang={lang}", headers=a["headers"]).json()
+        text = " | ".join(r["message"] for r in rows)
+        for b in banned:
+            assert b not in text, (lang, b, text)
+        assert not any(c.isdigit() and text[i + 1:i + 4] == "-12" for i, c in enumerate(text) if i + 4 < len(text))  # no ISO date left
+    ar = " ".join(r["message"] for r in client.get(f"/api/cases/{cid}/audit?lang=ar", headers=a["headers"]).json())
+    assert "عدد الرسائل: 2" in ar and "سليمة" in ar and "ديسمبر" in ar or "يناير" in ar or "فبراير" in ar or "مارس" in ar
+
+
+def test_vision_uses_dedicated_provider_and_hides_deepseek_only_fields(client, make_user, monkeypatch):
+    import json as _json
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "text-key")
+    monkeypatch.setattr(config, "VISION_KEY", "vision-key")
+    monkeypatch.setattr(config, "VISION_URL", "https://vision.example.com/v1/chat/completions")
+    seen = {}
+
+    class R:
+        def __init__(s, body): s.b = body
+        def read(s): return s.b
+        def __enter__(s): return s
+        def __exit__(s, *a): return False
+
+    def fake(req, timeout=0):
+        seen["url"] = req.full_url
+        seen["auth"] = req.headers.get("Authorization")
+        seen["body"] = _json.loads(req.data.decode())
+        return R(_json.dumps({"choices": [{"message": {"content": "نص من الصورة"}, "finish_reason": "stop"}]}).encode())
+
+    monkeypatch.setattr(analysis.urllib.request, "urlopen", fake)
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "s.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "SUCCESS" and r["text"] == "نص من الصورة"
+    assert seen["url"] == "https://vision.example.com/v1/chat/completions" and seen["auth"] == "Bearer vision-key"
+    assert "extra_body" not in seen["body"]            # only sent to DeepSeek endpoints
+
+
+def test_vision_error_categories_are_specific_but_safe(monkeypatch):
+    import urllib.error
+    for code, needle in ((404, "model or endpoint was not found"), (400, "may not support"), (401, "credentials")):
+        exc = urllib.error.HTTPError("http://x", code, "x", {}, None)
+        assert needle in analysis._safe_reason(exc)
+
+
+def test_ocr_retries_when_reasoning_eats_the_budget(client, make_user, monkeypatch):
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "dummy")
+    budgets = []
+
+    def fake(prompt, mime, b64, max_tokens=600):
+        budgets.append(max_tokens)
+        return ("", "length") if max_tokens < 4000 else ("أحمد: مرحبا\nخالد: أهلاً\nأحمد: وينك", "stop")
+
+    monkeypatch.setattr(analysis, "_call_vision_model", fake)
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "shot.png", _png()).json()
+    r = client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()
+    assert r["status"] == "SUCCESS" and budgets == [2000, 4000] and r["conversation"]["message_count"] == 3
+
+
+def test_ocr_distinguishes_blocked_exhausted_and_no_text(client, make_user, monkeypatch):
+    monkeypatch.setattr(analysis, "tesseract_available", lambda: False)
+    monkeypatch.setattr(config, "ATHAR_AI_KEY", "dummy")
+    a = make_user("Alice A"); cid = new_case(client, a["headers"])
+    ev = upload(client, a["headers"], cid, "shot.png", _png()).json()
+    for answer, expected in ((("", "content_filter"), "FAILED"), (("", "length"), "FAILED"), (("", "stop"), "NO_TEXT"), (("NO_TEXT", "stop"), "NO_TEXT")):
+        monkeypatch.setattr(analysis, "_call_vision_model", lambda *a_, _ans=answer, **k: _ans)
+        assert client.post(f"/api/evidence/{ev['id']}/ocr", headers=a["headers"]).json()["status"] == expected

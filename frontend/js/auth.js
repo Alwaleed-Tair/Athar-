@@ -54,12 +54,13 @@ const Auth = (() => {
   // language; anything unrecognised is shown as-is.
   function friendlyError(err) {
     if (!err) return I18n.t('genericError');
+    if (err.code) return UI.errorMessage(err);
     if (err.status === 401) return I18n.t('invalidCredentials');
     const msg = String(err.message || '');
     if (/already exists/i.test(msg)) return I18n.t('emailTaken');
     if (/^Password must/i.test(msg)) return I18n.t('passwordTooWeak');
     if (/^Email must/i.test(msg)) return I18n.t('emailNotAllowed');
-    return msg || I18n.t('genericError');
+    return UI.errorMessage(err);
   }
 
   async function renderLogin() {
@@ -110,14 +111,14 @@ const Auth = (() => {
 
     const isRegister = authMode === 'register';
     const isDark = State.get().theme === 'dark';
-    const symbolSrc = isDark ? '/assets/symbol-dark.png' : '/assets/symbol-light.png';
+    const symbolSrc = '/assets/athar-logo-128.png';
 
     const card = document.createElement('div');
     card.className = 'card login-card';
 
     card.innerHTML = `
       <div class="login-cyber-logo">
-        <img src="${symbolSrc}" alt="ATHAR" class="athar-logo-img" />
+        <img src="/assets/athar-logo.png" alt="أثر ATHAR" class="athar-logo-img" />
       </div>
       <div class="login-brand-name">${I18n.t('appName')}</div>
       <div class="login-tagline">${I18n.t('appTagline')}</div>
@@ -189,12 +190,13 @@ const Auth = (() => {
               autocorrect="off"
               spellcheck="false"
             />
+            <button type="button" class="pw-toggle" id="pw-toggle" aria-label="${I18n.t('showPassword')}">${UI.icon('eye', '', 16)}</button>
           </div>
           ${isRegister ? passwordChecklistHtml() : `
           <div class="forgot-pwd-row">
-            <a href="javascript:void(0)" class="forgot-pwd-link" id="forgot-pwd-trigger">
+            <button type="button" class="link-btn forgot-pwd-link" id="forgot-pwd-trigger">
               ${I18n.t('forgotPassword')}
-            </a>
+            </button>
           </div>
           `}
         </div>
@@ -205,14 +207,9 @@ const Auth = (() => {
       </form>
 
       <div style="text-align:center; margin-top:14px; font-size:0.84rem;">
-        <a href="javascript:void(0)" id="switch-mode" style="color:var(--color-cyan); font-weight:600;">
+        <button type="button" class="link-btn" id="switch-mode" style="color:var(--color-cyan); font-weight:600;">
           ${isRegister ? I18n.t('alreadyHaveAccount') : I18n.t('dontHaveAccount')}
-        </a>
-      </div>
-
-      <div class="restricted-warning-box">
-        <span class="warning-icon">${UI.icon('shieldAlert', '', 18)}</span>
-        <span>${I18n.t('restrictedAccessWarning')}</span>
+        </button>
       </div>
     `;
 
@@ -226,8 +223,21 @@ const Auth = (() => {
     card.querySelector('#tab-register-btn').onclick = () => switchTo('register');
     card.querySelector('#switch-mode').onclick = () => switchTo(isRegister ? 'login' : 'register');
 
+    try {
+      const notice = sessionStorage.getItem('athar_notice');
+      if (notice) {
+        sessionStorage.removeItem('athar_notice');
+        card.querySelector('#login-error').innerHTML = `<div class="alert alert-success">${UI.icon('check', '', 18)} <span>${I18n.t(notice)}</span></div>`;
+      }
+    } catch (e) { /* storage unavailable */ }
     const pwdInput = card.querySelector('#investigator-password');
     if (isRegister) wirePasswordChecklist(card, pwdInput);
+    const pwToggle = card.querySelector('#pw-toggle');
+    pwToggle.onclick = () => {
+      const show = pwdInput.type === 'password';
+      pwdInput.type = show ? 'text' : 'password';
+      pwToggle.innerHTML = UI.icon(show ? 'eyeOff' : 'eye', '', 16);
+    };
 
     const fpTrigger = card.querySelector('#forgot-pwd-trigger');
     if (fpTrigger) fpTrigger.onclick = openForgotPasswordModal;
@@ -264,17 +274,24 @@ const Auth = (() => {
       }
 
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span>${I18n.t('loggingIn')}</span>`;
+      submitBtn.innerHTML = `<span class="spinner"></span> <span>${isRegister ? I18n.t('registering') : I18n.t('loggingIn')}</span>`;
 
       try {
-        const res = isRegister
-          ? await Api.register(fullName, username, password)
-          : await Api.login(username, password);
-        authMode = 'login';
+        if (isRegister) {
+          const res = await Api.register(fullName, username, password);
+          authMode = 'login';
+          renderPending(container, res.email, { justRegistered: true });
+          return;
+        }
+        const res = await Api.login(username, password);
         Api.setToken(res.token);
         State.set({ user: res.user, route: { name: 'cases' } });
         Notifications.refresh();
       } catch (err) {
+        if (err.code === 'PENDING_APPROVAL') {
+          renderPending(container, username, { justRegistered: false });
+          return;
+        }
         showError(friendlyError(err));
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<span>${submitLabel}</span>`;
@@ -282,25 +299,45 @@ const Auth = (() => {
     });
   }
 
-  // There is no outgoing mail server, so rather than pretend to send a
-  // reset link, tell the user how a reset actually happens here: an
-  // admin sets a new password from the Users screen.
+  // Shown after registering, and when someone signs in with an account that the
+  // administrator has not approved yet. There is no e-mail step: an administrator
+  // approves each request from the Users screen.
+  function renderPending(container, email, { justRegistered }) {
+    container.innerHTML = '';
+    const symbolSrc = '/assets/athar-logo.png';
+    const card = document.createElement('div');
+    card.className = 'card login-card';
+    card.innerHTML = `
+      <div class="login-cyber-logo"><img src="/assets/athar-logo.png" alt="أثر ATHAR" class="athar-logo-img" /></div>
+      <div class="login-brand-name">${justRegistered ? I18n.t('pendingCreatedTitle') : I18n.t('pendingTitle')}</div>
+      <div class="mt-3"><div class="alert alert-${justRegistered ? 'success' : 'warning'}">${UI.icon(justRegistered ? 'check' : 'shield', '', 18)}
+        <span>${I18n.t(justRegistered ? 'pendingCreatedBody' : 'pendingBody', { email: `<bdi dir="ltr">${UI.escapeHtml(email)}</bdi>` })}</span></div></div>
+      <p class="text-muted text-sm mt-3">${I18n.t('pendingHelp')}</p>
+      <div class="flex gap-2 mt-3" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" id="back-login">${UI.icon('arrowLeft', '', 15)} <span>${I18n.t('backToLogin')}</span></button>
+        <button type="button" class="btn btn-ghost" id="to-contact">${UI.icon('mail', '', 15)} <span>${I18n.t('contactTitle')}</span></button>
+      </div>`;
+    container.appendChild(card);
+    card.querySelector('#back-login').onclick = () => { authMode = 'login'; renderCredentialsCard(container); };
+    card.querySelector('#to-contact').onclick = () => Pages.go('contact');
+  }
+
+  // There is no e-mail in ATHAR, so a forgotten password is reset by an administrator
+  // (Users screen). This tells the person exactly that.
   function openForgotPasswordModal() {
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="modal-header">
-        <h3 style="display:flex; align-items:center; gap:8px; margin:0;">
-          ${UI.icon('key', '', 20)}
-          <span>${I18n.t('forgotPasswordTitle')}</span>
-        </h3>
+        <h3 style="display:flex; align-items:center; gap:8px; margin:0;">${UI.icon('key', '', 20)} <span>${I18n.t('forgotPasswordTitle')}</span></h3>
       </div>
       <p>${I18n.t('forgotPasswordContactAdmin')}</p>
-      <div class="flex gap-2" style="justify-content:flex-end; margin-top:20px;">
+      <div class="flex gap-2" style="justify-content:flex-end; margin-top:20px; flex-wrap:wrap;">
+        <button type="button" id="fp-contact" class="btn">${I18n.t('contactTitle')}</button>
         <button type="button" id="fp-close" class="btn btn-primary">${I18n.t('gotIt')}</button>
-      </div>
-    `;
+      </div>`;
     const { close } = UI.openModal(content);
     content.querySelector('#fp-close').onclick = close;
+    content.querySelector('#fp-contact').onclick = () => { close(); Pages.go('contact'); };
   }
 
   return { renderLogin, passwordChecklistHtml, wirePasswordChecklist, isStrongPassword, friendlyError };
