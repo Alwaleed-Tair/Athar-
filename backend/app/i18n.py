@@ -49,6 +49,26 @@ TEMPLATES = {
         "en": "{username} generated the AI case summary for \"{case_name}\"",
         "ar": "ولّد {username} ملخص القضية بالذكاء الاصطناعي لـ \"{case_name}\"",
     },
+    "RESTRICTED_LINK_DETECTED": {
+        "en": "Evidence \"{filename}\" matches evidence in a case {username} has no access to ({reasons}); details withheld",
+        "ar": "الدليل \"{filename}\" يطابق دليلاً في قضية لا يملك {username} صلاحيتها ({reasons})، والتفاصيل محجوبة",
+    },
+    "ACCESS_REQUESTED": {
+        "en": "{username} asked the owner of the matching case for access (from \"{filename}\", {reasons})",
+        "ar": "طلب {username} الوصول من مالك القضية المطابقة (انطلاقاً من \"{filename}\"، {reasons})",
+    },
+    "ACCESS_REQUEST_RECEIVED": {
+        "en": "{requester_username} asked for access to this case: their evidence matches \"{filename}\" ({reasons})",
+        "ar": "طلب {requester_username} الوصول إلى هذه القضية: دليله يطابق \"{filename}\" ({reasons})",
+    },
+    "ACCESS_REQUEST_APPROVED": {
+        "en": "{actor_username} approved the access request of {requester_username}",
+        "ar": "قبل {actor_username} طلب وصول {requester_username}",
+    },
+    "ACCESS_REQUEST_DECLINED": {
+        "en": "{actor_username} declined the access request of {requester_username}",
+        "ar": "رفض {actor_username} طلب وصول {requester_username}",
+    },
     "MEMBER_ADDED": {
         "en": "{actor_username} granted {member_username} access to this case",
         "ar": "منح {actor_username} المستخدم {member_username} صلاحية الوصول لهذه القضية",
@@ -214,6 +234,14 @@ RESULT_LABELS = {
 }
 
 
+REASON_LABELS = {
+    "IDENTICAL_FILE": {"en": "identical file", "ar": "ملف مطابق"},
+    "SHARED_PHONE": {"en": "same phone number", "ar": "رقم هاتف مشترك"},
+    "SHARED_EMAIL": {"en": "same e-mail", "ar": "بريد إلكتروني مشترك"},
+    "SHARED_IBAN": {"en": "same IBAN", "ar": "آيبان مشترك"},
+}
+
+
 def _fallback(action: str, lang: str) -> str:
     if lang == "ar":
         return f"سجل من نوع «{action}» (تفاصيله غير متاحة أو تالفة)"
@@ -237,6 +265,10 @@ def build_message(action: str, params: dict, lang: Optional[str]) -> str:
         params["case_action"] = CASE_ACTION_LABELS[params["case_action"]][lang]
     if params.get("method") in OCR_METHOD_LABELS:
         params["method"] = OCR_METHOD_LABELS[params["method"]][lang]
+    if "reason_codes" in params:
+        codes = params.get("reason_codes") or []
+        sep = "، " if lang == "ar" else ", "
+        params["reasons"] = sep.join(REASON_LABELS.get(c, {}).get(lang, str(c)) for c in codes) or "-"
     if "purge_after" in params:
         params["purge_after"] = _pretty_date(params["purge_after"], lang)
     if "result" in params and params["result"] in RESULT_LABELS:

@@ -106,6 +106,19 @@ device, or a text reference), a popup appears the first time the match
 is seen, and the bell keeps the full list. The app re-checks in the
 background every minute while a user is signed in.
 
+- **Cases you are a member of:** full detail (the other case, the other
+  file, every reason).
+- **Cases you are NOT a member of (restricted notice):** only concrete
+  identifiers count (identical file, same phone number, e-mail or IBAN).
+  Both investigators see a notice in their own case saying a match exists
+  and which of *their own* values matched, never the other case's name,
+  owner, files or content. Either one can send an access request; only the
+  owner of the other case sees who is asking and decides. Approving adds
+  the requester as a case member. First detections, requests and decisions
+  are sealed in the custody chain. Fuzzy signals (wording, device,
+  participant names, URLs) never cross this boundary. Turn the notices off
+  with `ATHAR_RESTRICTED_LINK_ALERTS=0`.
+
 ### Enabling AI analysis (optional)
 
 Set `ATHAR_AI_KEY` in `.env` to enable the "Run AI analysis" button on

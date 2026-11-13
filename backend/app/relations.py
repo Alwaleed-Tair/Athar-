@@ -1,11 +1,19 @@
 """
 Relationship engine: which evidence items share something with which.
 
-PRIVACY RULE (the one that matters): the index is built ONLY from cases the
-requesting user is a member of. Evidence in a case the user cannot open is
-never read, never compared and never mentioned -- not even as an
-anonymous "something matched" hint -- so similarity can't be used to probe
-other users' data.
+PRIVACY RULE (the one that matters): full relations -- with the other case's
+name, the other file and every reason -- are built ONLY from cases the
+requesting user is a member of.
+
+The single, deliberate exception is restricted_matches(): evidence in a case
+the user cannot open is compared on CONCRETE identifiers only (identical
+SHA-256, or the same phone number / e-mail / IBAN). The user learns that a
+match exists and which of THEIR OWN values matched; never the other case's
+name, owner, file names, counts or content. Fuzzy signals (wording, device,
+participant names, URLs, dates) are never used across that boundary, so the
+notice cannot be turned into a search of other people's cases. The owner of
+the other case sees the mirror notice in their own case, and decides on any
+access request.
 
 Every reason is deterministic and explainable: an exact hash, an exact
 camera model, an exact phone/e-mail/URL/IBAN present in both texts, the same
@@ -13,9 +21,9 @@ conversation participant, or lexical TF-IDF text similarity (with the shared
 words listed). Nothing is guessed.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
-from . import textindex
+from . import config, textindex
 
 STRENGTH = {
     "IDENTICAL_FILE": 3, "SHARED_PHONE": 3, "SHARED_EMAIL": 3, "SHARED_IBAN": 3, "SHARED_URL": 2,
@@ -186,3 +194,89 @@ def search_all(conn, user_id: int, query: str, case_id: int | None = None, limit
                     if len(messages) >= limit:
                         break
     return {"cases": cases[:limit], "evidence": evidence[:limit], "messages": messages[:limit]}
+
+
+# --- restricted links: cases the user is NOT a member of ---------------------------------------
+
+RESTRICTED_TYPES = ("IDENTICAL_FILE", "SHARED_PHONE", "SHARED_EMAIL", "SHARED_IBAN")
+
+
+def _strong_reasons(a: dict, b: dict) -> list[dict]:
+    """Concrete identifiers only. Every value returned is present in the
+    viewer's OWN evidence `a`, so showing it reveals nothing the viewer does
+    not already hold -- only the fact that it also exists elsewhere."""
+    reasons = []
+    if a["sha256"] == b["sha256"]:
+        reasons.append({"type": "IDENTICAL_FILE", "value": a["sha256"][:16]})
+    for kind in ("phone", "email", "iban"):
+        for v in sorted(a["entities"][kind] & b["entities"][kind])[:3]:
+            reasons.append({"type": "SHARED_" + kind.upper(), "value": v})
+    return reasons
+
+
+def restricted_matches(conn, user_id: int, case_id: int) -> tuple[list[dict], list[dict]]:
+    """Matches between evidence of `case_id` and evidence in cases the user
+    is NOT a member of. Returns (alerts, newly_detected).
+
+    An alert carries the viewer's own evidence, the matching reason(s) and an
+    opaque link id -- never the other case's id, name, owner, file names or
+    content. newly_detected lists the first sightings, which the caller seals
+    into the custody chain."""
+    if not config.RESTRICTED_LINK_ALERTS:
+        return [], []
+    member_of = set(accessible_case_ids(conn, user_id))
+    if case_id not in member_of:
+        return [], []
+    other_ids = [r["id"] for r in conn.execute("SELECT id FROM cases WHERE status != 'DELETED'")
+                 if r["id"] not in member_of]
+    if not other_ids:
+        return [], []
+    mine = load_index(conn, [case_id])
+    if not mine:
+        return [], []
+    theirs = load_index(conn, other_ids)
+
+    groups: dict[tuple[int, int], dict] = {}
+    for a in mine.values():
+        for b in theirs.values():
+            reasons = _strong_reasons(a, b)
+            if not reasons:
+                continue
+            g = groups.setdefault((a["id"], b["case_id"]), {"evidence": a, "other_ids": [], "reasons": {}})
+            g["other_ids"].append(b["id"])
+            for r in reasons:
+                g["reasons"][(r["type"], r["value"])] = r
+
+    now = datetime.now(timezone.utc).strftime(config.TIMESTAMP_FORMAT)
+    alerts, new = [], []
+    for (ev_id, other_case), g in sorted(groups.items()):
+        reasons = list(g["reasons"].values())[:6]
+        ids_json = json.dumps(sorted(g["other_ids"]))
+        reasons_json = json.dumps(reasons, ensure_ascii=False)
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO restricted_links (evidence_id, other_case_id, other_evidence_ids_json, reasons_json, first_seen_at) "
+            "VALUES (?, ?, ?, ?, ?)", (ev_id, other_case, ids_json, reasons_json, now))
+        if cur.rowcount:
+            link_id = cur.lastrowid
+            new.append({"evidence_id": ev_id, "filename": g["evidence"]["title"] or g["evidence"]["filename"],
+                        "reason_codes": sorted({r["type"] for r in reasons})})
+        else:
+            link_id = conn.execute("SELECT id FROM restricted_links WHERE evidence_id = ? AND other_case_id = ?",
+                                   (ev_id, other_case)).fetchone()["id"]
+            conn.execute("UPDATE restricted_links SET other_evidence_ids_json = ?, reasons_json = ? WHERE id = ?",
+                         (ids_json, reasons_json, link_id))
+        req = conn.execute(
+            "SELECT status FROM access_requests WHERE requester_id = ? AND target_case_id = ? ORDER BY id DESC LIMIT 1",
+            (user_id, other_case)).fetchone()
+        types = {r["type"] for r in reasons}
+        alerts.append({
+            "type": "IDENTICAL_FILE" if "IDENTICAL_FILE" in types else "SHARED_CONTENT",
+            "visible": False,
+            "link_id": link_id,
+            "evidence_id": ev_id,
+            "evidence_filename": g["evidence"]["title"] or g["evidence"]["filename"],
+            "reasons": reasons,
+            "request_status": req["status"] if req else None,
+        })
+    conn.commit()
+    return alerts, new

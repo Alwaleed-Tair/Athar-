@@ -109,6 +109,14 @@ LOGIN_LOCK_SECONDS = int(os.environ.get("ATHAR_LOGIN_LOCK_SECONDS", "900"))
 # then permanently purged. The audit-log rows are never removed.
 EVIDENCE_RETENTION_DAYS = int(os.environ.get("ATHAR_EVIDENCE_RETENTION_DAYS", "30"))
 
+# Restricted cross-case notices. When evidence in your case matches evidence in a case you are
+# NOT a member of, by a concrete identifier only (identical file, or the same phone number,
+# e-mail or IBAN), you are told THAT a match exists and why -- never which case, whose it is, or
+# anything it contains -- and you can ask that case's owner for access. Both sides see the notice
+# in their own case. Every first detection, request and decision is sealed in the custody chain.
+# Set ATHAR_RESTRICTED_LINK_ALERTS=0 to turn the notices off.
+RESTRICTED_LINK_ALERTS = os.environ.get("ATHAR_RESTRICTED_LINK_ALERTS", "1").strip().lower() not in ("0", "false", "no", "off")
+
 # Conversation parsing limits
 MAX_CHAT_MESSAGES = 100_000
 MAX_FULLTEXT_CHARS = 2_000_000

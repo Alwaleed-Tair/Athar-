@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, integrity
 from .database import init_db
-from .routers import auth, cases, contact, evidence, reports, search
+from .routers import auth, cases, contact, evidence, links, reports, search
 
 app = FastAPI(title="ATHAR - Digital Evidence Custody Platform", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -16,6 +16,7 @@ app.include_router(evidence.router)
 app.include_router(search.router)
 app.include_router(reports.router)
 app.include_router(contact.router)
+app.include_router(links.router)
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 

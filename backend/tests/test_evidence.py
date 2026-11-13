@@ -314,14 +314,19 @@ def test_cross_case_alerts_only_between_my_cases(client, make_user):
     upload(client, a["headers"], ca2, "two.txt", data)
     upload(client, b["headers"], cb, "theirs.txt", data)            # identical file in someone else's case
     al = client.get(f"/api/cases/{ca1}/cross-case-alerts", headers=a["headers"]).json()["alerts"]
-    assert [x["other_case_id"] for x in al] == [ca2]               # B's case is never mentioned
-    assert all(x["visible"] for x in al)
+    visible = [x for x in al if x["visible"]]
+    assert [x["other_case_id"] for x in visible] == [ca2]          # full detail only between my own cases
+    # B's case appears only as a restricted notice: no id, name, owner or file of B's case
+    restricted = [x for x in al if not x["visible"]]
+    assert restricted and all("other_case_id" not in x and x["link_id"] for x in restricted)
     assert "B only" not in json.dumps(al) and "theirs.txt" not in json.dumps(al)
     rel = client.get(f"/api/cases/{ca1}/related", headers=a["headers"]).json()["relations"]
     assert rel and "IDENTICAL_FILE" in [r["type"] for r in rel[0]["reasons"]]
     assert "B only" not in json.dumps(rel)
-    # B sees only their own case, with no link to A
-    assert client.get(f"/api/cases/{cb}/cross-case-alerts", headers=b["headers"]).json()["alerts"] == []
+    # B gets the mirror notice in their own case, again without anything of A's cases
+    bl = client.get(f"/api/cases/{cb}/cross-case-alerts", headers=b["headers"]).json()["alerts"]
+    assert bl and not any(x["visible"] for x in bl)
+    assert "A1" not in json.dumps(bl) and "one.txt" not in json.dumps(bl) and "two.txt" not in json.dumps(bl)
 
 
 def test_similarity_reasons_and_search_scope(client, make_user):

@@ -494,6 +494,23 @@ const Cases = (() => {
     el.appendChild(title);
 
     alerts.forEach((a) => {
+      if (!a.visible) {
+        // Restricted: the match is in a case this user cannot open. Only their own
+        // file and the matching value are known; they may ask the owner for access.
+        const row = document.createElement('div');
+        row.className = 'alert alert-warning mt-3';
+        row.style.marginBlockEnd = '0';
+        row.style.flexWrap = 'wrap';
+        const reasons = (a.reasons || []).slice(0, 3).map((r) => `${I18n.t('reason_' + r.type)}: ${r.value}`).join(' · ');
+        const body = document.createElement('div');
+        body.style.flex = '1';
+        body.innerHTML = `<div dir="auto">${UI.escapeHtml(I18n.t('crossCaseAlertHidden', { filename: a.evidence_filename }))}</div>${reasons ? `<div class="text-xs" style="opacity:.85;" dir="auto">${UI.escapeHtml(reasons)}</div>` : ''}`;
+        row.innerHTML = UI.icon('lock', '', 16);
+        row.appendChild(body);
+        row.appendChild(Notifications.restrictedAction(a));
+        el.appendChild(row);
+        return;
+      }
       const row = document.createElement('div');
       row.className = 'alert alert-warning mt-3 alert-clickable';
       row.style.marginBlockEnd = '0';

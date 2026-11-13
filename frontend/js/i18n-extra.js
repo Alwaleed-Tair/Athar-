@@ -147,6 +147,19 @@ I18n.extend('en', {
   reason_SHARED_EMAIL: 'Shared e-mail', reason_SHARED_IBAN: 'Shared IBAN', reason_SHARED_URL: 'Shared link', reason_SHARED_PARTICIPANT: 'Same chat participant',
   reason_TEXT_SIMILARITY: 'Similar wording', reason_SHARED_DATE: 'Date in both texts', reason_SAME_CAPTURE_DAY: 'Captured the same day',
 
+  // restricted cross-case notices + access requests
+  requestAccess: 'Request access', requestAccessTitle: 'Ask for access to the matching case',
+  requestAccessBody: 'The owner of the matching case will see your name, your case name and the matching value, and can accept or decline. Nothing about their case is shown to you unless they accept.',
+  requestAccessNote: 'Note for the owner (optional)', requestAccessSend: 'Send request',
+  accessRequestSent: 'Request sent to the case owner.',
+  accessStatus_PENDING: 'Access request pending', accessStatus_DECLINED: 'Your request was declined',
+  accessRequestsTitle: 'Access requests to your cases',
+  accessRequestText: '{requester} (case "{fromCase}") asks for access to your case "{caseName}". Matches: {files} — {reasons}',
+  accessRequestNote: 'Note: {note}',
+  accessApproved: 'Access granted. {requester} is now a member of the case.', accessDeclined: 'Request declined.',
+  err_ALREADY_REQUESTED: 'You already have a pending request for this case.',
+  err_ALREADY_DECIDED: 'This request was already decided.',
+
   // case sharing
   caseOwner: 'Owner', addMemberByEmail: 'Share this case - enter the person\'s registered e-mail',
   addMemberNote: 'They must have a verified ATHAR account. They will see all evidence in this case. This is recorded in the audit log.',
@@ -311,6 +324,19 @@ I18n.extend('ar', {
   reason_IDENTICAL_FILE: 'ملف مطابق (نفس SHA-256)', reason_SAME_DEVICE: 'نفس الجهاز (EXIF)', reason_SHARED_PHONE: 'رقم هاتف مشترك',
   reason_SHARED_EMAIL: 'بريد إلكتروني مشترك', reason_SHARED_IBAN: 'رقم IBAN مشترك', reason_SHARED_URL: 'رابط مشترك', reason_SHARED_PARTICIPANT: 'نفس طرف المحادثة',
   reason_TEXT_SIMILARITY: 'صياغة متشابهة', reason_SHARED_DATE: 'تاريخ مذكور في النصين', reason_SAME_CAPTURE_DAY: 'التُقطا في نفس اليوم',
+
+  // تنبيهات القضايا المقيّدة وطلبات الوصول
+  requestAccess: 'طلب الوصول', requestAccessTitle: 'طلب الوصول إلى القضية المطابقة',
+  requestAccessBody: 'سيرى مالك القضية المطابقة اسمك واسم قضيتك وقيمة التطابق، وله أن يقبل أو يرفض. لن يظهر لك شيء من قضيته إلا إذا قبل.',
+  requestAccessNote: 'ملاحظة للمالك (اختياري)', requestAccessSend: 'إرسال الطلب',
+  accessRequestSent: 'أُرسل الطلب إلى مالك القضية.',
+  accessStatus_PENDING: 'طلب الوصول قيد المراجعة', accessStatus_DECLINED: 'رُفض طلبك',
+  accessRequestsTitle: 'طلبات الوصول إلى قضاياك',
+  accessRequestText: 'يطلب {requester} (من قضية "{fromCase}") الوصول إلى قضيتك "{caseName}". التطابق مع: {files} — {reasons}',
+  accessRequestNote: 'ملاحظته: {note}',
+  accessApproved: 'تم منح الوصول، وأصبح {requester} عضواً في القضية.', accessDeclined: 'رُفض الطلب.',
+  err_ALREADY_REQUESTED: 'لديك طلب قيد المراجعة لهذه القضية.',
+  err_ALREADY_DECIDED: 'تم البت في هذا الطلب مسبقاً.',
 
   caseOwner: 'المالك', addMemberByEmail: 'شارك هذه القضية - أدخل البريد الإلكتروني المسجَّل للشخص',
   addMemberNote: 'يجب أن يكون لديه حساب موثَّق في أثر. سيرى كل الأدلة في هذه القضية. ويُسجَّل ذلك في سجل التدقيق.',

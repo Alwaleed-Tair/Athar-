@@ -17,6 +17,7 @@ const Pages = (() => {
           { h: 'من يرى بياناتك؟', list: [
             'أنت، ومن تشاركهم القضية فقط.',
             'مسؤول النظام يدير الحسابات، لكنه لا يرى قضاياك إلا إذا أضفته.',
+            'إذا طابق دليلٌ في قضيتك (ملف مطابق أو رقم هاتف أو بريد أو آيبان) دليلاً في قضية شخص آخر، يُبلَّغ كل منكما بوجود التطابق فقط، دون اسم القضية الأخرى أو صاحبها أو محتواها. ولا تُفتح القضية إلا إذا قبل مالكها طلب الوصول.',
             'الفريق الذي يشغّل الخادم يستطيع تقنياً الوصول للملفات المخزّنة.',
           ]},
           { h: 'الذكاء الاصطناعي', list: [
@@ -43,6 +44,7 @@ const Pages = (() => {
           { h: 'Who can see your data', list: [
             'You, and only the people you share a case with.',
             'The administrator manages accounts but cannot see your cases unless you add them.',
+            'If evidence in your case matches evidence in someone else\'s case (same file, phone number, e-mail or IBAN), each of you is told only that a match exists, never the other case\'s name, owner or content. The case opens only if its owner accepts an access request.',
             'The team that runs the server can technically reach the stored files.',
           ]},
           { h: 'AI features', list: [

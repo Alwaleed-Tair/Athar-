@@ -102,15 +102,21 @@ def build_evidence_ai_items(conn, case_id: int) -> list[dict]:
 @router.get("/cases/{case_id}/cross-case-alerts")
 def cross_case_alerts(case_id: int, user: dict = Depends(require_case_member)):
     """
-    Links between evidence of THIS case and evidence of OTHER cases that the
-    current user is ALSO a member of (identical file, same device, shared
-    phone/e-mail/IBAN/URL, shared chat participant, lexical text similarity).
-    Cases the user cannot open are never read or hinted at: there is no
-    "hidden" alert, so this endpoint cannot be used to probe other users'
-    data.
+    Two kinds of alert:
+    - visible: links between evidence of THIS case and evidence of OTHER
+      cases the current user is ALSO a member of, with full detail
+      (identical file, same device, shared phone/e-mail/IBAN/URL, shared
+      chat participant, lexical text similarity).
+    - restricted (visible=False): this case's evidence matches evidence in a
+      case the user is NOT a member of, by a concrete identifier only
+      (identical file, same phone/e-mail/IBAN). Only the user's own file and
+      matching value are returned, plus an opaque link_id for asking the
+      other case's owner for access. The other case's name, owner, files and
+      content are never returned. See relations.restricted_matches.
     """
     with get_conn() as conn:
         rels = relations.compute_relations(conn, user["id"], case_id, only_other_cases=True)
+        restricted, newly_seen = relations.restricted_matches(conn, user["id"], case_id)
     alerts = []
     for r in rels:
         types = [x["type"] for x in r["reasons"]]
@@ -126,7 +132,15 @@ def cross_case_alerts(case_id: int, user: dict = Depends(require_case_member)):
             "other_evidence_filename": r["other_evidence_name"],
             "reasons": r["reasons"],
         })
-    return {"alerts": alerts}
+    for n in newly_seen:
+        audit.append_event(
+            "RESTRICTED_LINK_DETECTED",
+            actor_id=user["id"],
+            case_id=case_id,
+            evidence_id=n["evidence_id"],
+            params={"username": user["username"], "filename": n["filename"], "reason_codes": n["reason_codes"]},
+        )
+    return {"alerts": alerts + restricted}
 
 
 @router.get("/cases/{case_id}/related")

@@ -223,6 +223,37 @@ CREATE TABLE IF NOT EXISTS evidence_authenticity (
     lang TEXT NOT NULL,
     checked_at TEXT NOT NULL
 );
+
+-- Restricted cross-case links: a piece of evidence matches evidence in a case
+-- that the viewer is not a member of. One row per (evidence, other case).
+-- other_case_id / other_evidence_ids are NEVER sent to the viewer; the row id
+-- is the only handle the viewer gets (to ask the other case's owner for access).
+CREATE TABLE IF NOT EXISTS restricted_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evidence_id INTEGER NOT NULL REFERENCES evidence(id),
+    other_case_id INTEGER NOT NULL REFERENCES cases(id),
+    other_evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+    reasons_json TEXT NOT NULL DEFAULT '[]',
+    first_seen_at TEXT NOT NULL,
+    UNIQUE (evidence_id, other_case_id)
+);
+
+-- Requests to join a case, sent from a restricted link. Only the case owner
+-- decides; approving adds the requester as a case member.
+CREATE TABLE IF NOT EXISTS access_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    link_id INTEGER NOT NULL REFERENCES restricted_links(id),
+    requester_id INTEGER NOT NULL REFERENCES users(id),
+    requester_case_id INTEGER NOT NULL REFERENCES cases(id),
+    target_case_id INTEGER NOT NULL REFERENCES cases(id),
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'APPROVED', 'DECLINED')),
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    decided_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_access_requests_target ON access_requests(target_case_id, status);
+CREATE INDEX IF NOT EXISTS idx_access_requests_requester ON access_requests(requester_id, target_case_id);
 """
 
 
